@@ -22,11 +22,11 @@ fi
 
 log "🔐 Solicitando novo certificado para: $DOMINIO"
 
-sudo docker run -i --rm --name certbot \
+docker run -i --rm --name certbot \
     -v "$DIR_CERTS/letsencrypt:/etc/letsencrypt" \
-    -v "/var/lib/letsencrypt:/var/lib/letsencrypt" \
+    -v "$DIR_CERTS/letsencrypt-lib:/var/lib/letsencrypt" \
     -p 80:80 -p 443:443 certbot/certbot certonly \
-    | { sleep 10; echo "1"; sleep 10; echo "$DOMINIO"; }
+    | { sleep 5; printf "1\n"; sleep 5; printf "$DOMINIO \n"; }
 
 if [ $? -ne 0 ]; then
     log "❌ ERRO: Certbot falhou ao gerar o certificado."
