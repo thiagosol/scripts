@@ -65,10 +65,11 @@ fi
 log "✅ Certificado gerado com sucesso!"
 
 log "📂 Copiando certificados para o Traefik..."
-cp "$DIR_CERTS/letsencrypt/live/thiagosol.com/fullchain.pem" /opt/sol-apis/traefik/data/certs/fullchain.pem
-cp "$DIR_CERTS/letsencrypt/live/thiagosol.com/privkey.pem" /opt/sol-apis/traefik/data/certs/privkey.pem
+sudo cp "$DIR_CERTS/letsencrypt/live/thiagosol.com/fullchain.pem" /opt/sol-apis/traefik/data/certs/fullchain.pem
+sudo cp "$DIR_CERTS/letsencrypt/live/thiagosol.com/privkey.pem" /opt/sol-apis/traefik/data/certs/privkey.pem
 
 log "🚀 Reiniciando o Traefik..."
 docker-compose -f /opt/sol-apis/traefik/docker-compose.yml up -d
 
+sudo rm -rf "$DIR_CERTS/letsencrypt"
 log "✅ Certificado atualizado e Traefik reiniciado com sucesso!"
