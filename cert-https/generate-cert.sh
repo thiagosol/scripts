@@ -72,4 +72,6 @@ log "🚀 Reiniciando o Traefik..."
 docker-compose -f /opt/sol-apis/traefik/docker-compose.yml up -d
 
 sudo rm -rf "$DIR_CERTS/letsencrypt"
+sudo rm -rf "$DIR_CERTS/letsencrypt-lib"
+
 log "✅ Certificado atualizado e Traefik reiniciado com sucesso!"
