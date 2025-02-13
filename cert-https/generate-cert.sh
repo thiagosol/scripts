@@ -5,9 +5,10 @@ log() {
 }
 
 DIR_CERTS="/opt/auto-deploy/scripts/cert-https"
+DIR_TRAEFIK="/opt/auto-deploy/traefik-proxy"
 
 log "🔴 Parando o Traefik..."
-docker-compose -f /opt/sol-apis/traefik/docker-compose.yml down
+docker-compose -f "$DIR_TRAEFIK/docker-compose.yml" down
 
 log "📖 Lendo domínio do arquivo de configuração..."
 DOMINIO=$(head -n 1 "$DIR_CERTS/domains.txt")
@@ -58,15 +59,15 @@ EOF
 if [ $? -ne 0 ]; then
     log "❌ ERRO: Certbot falhou ao gerar o certificado."
     log "🚀 Reiniciando o Traefik..."
-    docker-compose -f /opt/sol-apis/traefik/docker-compose.yml up
+    docker-compose -f "$DIR_TRAEFIK/docker-compose.yml" up
     exit 1
 fi
 
 log "✅ Certificado gerado com sucesso!"
 
 log "📂 Copiando certificados para o Traefik..."
-sudo cp "$DIR_CERTS/letsencrypt/live/thiagosol.com/fullchain.pem" /opt/sol-apis/traefik/data/certs/fullchain.pem
-sudo cp "$DIR_CERTS/letsencrypt/live/thiagosol.com/privkey.pem" /opt/sol-apis/traefik/data/certs/privkey.pem
+sudo cp "$DIR_CERTS/letsencrypt/live/thiagosol.com/fullchain.pem" /opt/auto-deploy/certs/https/fullchain.pem
+sudo cp "$DIR_CERTS/letsencrypt/live/thiagosol.com/privkey.pem" /opt/auto-deploy/certs/https/privkey.pem
 
 log "🚀 Reiniciando o Traefik..."
 docker-compose -f /opt/sol-apis/traefik/docker-compose.yml up -d
