@@ -9,9 +9,6 @@ DIR_CERTS="/opt/auto-deploy/scripts/cert-https"
 log "🔴 Parando o Traefik..."
 docker-compose -f /opt/sol-apis/traefik/docker-compose.yml down
 
-log "🗑️ Removendo certificados antigos..."
-rm -rf "$DIR_CERTS/letsencrypt/live/thiagosol.com"
-
 log "📖 Lendo domínio do arquivo de configuração..."
 DOMINIO=$(head -n 1 "$DIR_CERTS/domains.txt")
 
@@ -20,18 +17,39 @@ if [ -z "$DOMINIO" ]; then
     exit 1
 fi
 
-log "🔐 Solicitando novo certificado para: $DOMINIO"
+log "🛑 Verificando e removendo containers em execução da imagem certbot/certbot..."
 
+CONTAINERS=$(docker ps -q --filter "ancestor=certbot/certbot")
+if [ -n "$CONTAINERS" ]; then
+    log "🛑 Containers encontrados, parando e removendo..."
+    docker stop $CONTAINERS && docker rm $CONTAINERS
+else
+    log "✅ Nenhum container ativo da imagem certbot/certbot encontrado."
+fi
+
+log "🗑️ Removendo certificados antigos..."
+sudo rm -rf "$DIR_CERTS/letsencrypt"
+
+log "🔐 Solicitando novo certificado para: $DOMINIO"
 expect <<EOF
     spawn sudo docker run -it --rm --name certbot \
         -v "$DIR_CERTS/letsencrypt:/etc/letsencrypt" \
         -v "$DIR_CERTS/letsencrypt-lib:/var/lib/letsencrypt" \
         -p 80:80 -p 443:443 certbot/certbot certonly
 
-    expect "Enter the appropriate number"
+    expect "Select the appropriate number"
     send "1\n"
+
+    expect "Enter email address"
+    send "contato@thiagosol.com\n"
+
+    expect "You must agree in order to register with the ACME server. Do you agree?"
+    send "Y\n"
     
-    expect "Enter domain names"
+    expect "Would you be willing, once your first certificate is successfully issued"
+    send "Y\n"
+
+    expect "Please enter the domain name"
     send "$DOMINIO\n"
     
     expect eof
