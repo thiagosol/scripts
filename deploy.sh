@@ -1,18 +1,15 @@
 #!/bin/bash
 
-# 🚀 Função para imprimir logs com timestamp
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
 }
 
-# 🚀 Definição de variáveis
 SERVICO=$1
-BRANCH=${2:-main}  # Se não informado, assume "main"
+BRANCH=${2:-main}
 DIR_BASE="/opt/auto-deploy/$SERVICO"
 DIR_TEMP="$DIR_BASE/temp"
 GIT_REPO="https://github.com/thiagosol/$SERVICO.git"
 
-# 🚀 Criar diretório de trabalho
 mkdir -p "$DIR_TEMP"
 cd "$DIR_TEMP" || exit 1
 
@@ -24,6 +21,7 @@ if [ ! -f "$DIR_TEMP/Dockerfile" ]; then
 
     log "⚠️ Nenhum Dockerfile encontrado. Apenas copiando arquivos para $DIR_BASE e finalizando."
     cp -r "$DIR_TEMP/"* "$DIR_BASE/"
+    find "$DIR_BASE" -type f -name "*.sh" -exec chmod +x {} \;
     rm -rf "$DIR_TEMP"
     log "✅ Deploy sem docker finalizado!"
     exit 0
