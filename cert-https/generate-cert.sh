@@ -22,14 +22,25 @@ fi
 
 log "🔐 Solicitando novo certificado para: $DOMINIO"
 
-docker run -i --rm --name certbot \
-    -v "$DIR_CERTS/letsencrypt:/etc/letsencrypt" \
-    -v "$DIR_CERTS/letsencrypt-lib:/var/lib/letsencrypt" \
-    -p 80:80 -p 443:443 certbot/certbot certonly \
-    | { sleep 5; printf "1\n"; sleep 5; printf "$DOMINIO \n"; }
+expect <<EOF
+    spawn sudo docker run -it --rm --name certbot \
+        -v "$DIR_CERTS/letsencrypt:/etc/letsencrypt" \
+        -v "$DIR_CERTS/letsencrypt-lib:/var/lib/letsencrypt" \
+        -p 80:80 -p 443:443 certbot/certbot certonly
+
+    expect "Enter the appropriate number"
+    send "1\n"
+    
+    expect "Enter domain names"
+    send "$DOMINIO\n"
+    
+    expect eof
+EOF
 
 if [ $? -ne 0 ]; then
     log "❌ ERRO: Certbot falhou ao gerar o certificado."
+    log "🚀 Reiniciando o Traefik..."
+    docker-compose -f /opt/sol-apis/traefik/docker-compose.yml up
     exit 1
 fi
 
