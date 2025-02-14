@@ -54,17 +54,18 @@ log "📂 Movendo docker-compose.yml para $DIR_BASE"
 mv "$DIR_TEMP/docker-compose.yml" "$DIR_BASE/"
 
 log "🛠️ Verificando volumes..."
-VOLUMES=$(grep "volumes:" -A 20 "$DIR_BASE/docker-compose.yml" | grep "\./" | awk '{print $1}' | tr -d '"')
+VOLUMES=$(grep -oP '(?<=- \./)[^:]+' "$DIR_BASE/docker-compose.yml")
 
 for VOL in $VOLUMES; do
-    VOL_PATH="${VOL#./}"  # Remove o "./" inicial
-    ORIGEM="$DIR_TEMP/$VOL_PATH"
-    DESTINO="$DIR_BASE/$VOL_PATH"
+    ORIGEM="$DIR_TEMP/$VOL"
+    DESTINO="$DIR_BASE/$VOL"
 
-    # Se o volume for um diretório ou arquivo e existir na pasta temp, move ele
+    # Se o volume for um arquivo ou diretório e existir na pasta temp, move ele
     if [ -e "$ORIGEM" ]; then
         log "📁 Movendo volume $ORIGEM para $DESTINO"
         mv "$ORIGEM" "$DESTINO" || log "⚠️ Erro ao mover $ORIGEM, ignorando..."
+    else
+        log "❌ Volume $ORIGEM não encontrado no temp, ignorando..."
     fi
 
     # Se o destino ainda não existir, cria um diretório vazio
