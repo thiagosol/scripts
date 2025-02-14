@@ -53,16 +53,25 @@ eval "$DOCKER_BUILD_CMD"
 log "📂 Movendo docker-compose.yml para $DIR_BASE"
 mv "$DIR_TEMP/docker-compose.yml" "$DIR_BASE/"
 
-# 🚀 Criar volumes locais conforme necessário
 log "🛠️ Verificando volumes..."
-VOLUMES=$(grep "volumes:" -A 10 "$DIR_BASE/docker-compose.yml" | grep "\./" | awk '{print $1}' | tr -d '"')
+VOLUMES=$(grep "volumes:" -A 20 "$DIR_BASE/docker-compose.yml" | grep "\./" | awk '{print $1}' | tr -d '"')
 
 for VOL in $VOLUMES; do
-    VOL_PATH="$DIR_BASE/${VOL#./}"  # Remove o "./" inicial
-    if [ ! -d "$VOL_PATH" ]; then
-        log "📁 Criando volume $VOL_PATH"
-        mkdir -p "$VOL_PATH"
-        chmod 777 -R "$VOL_PATH"
+    VOL_PATH="${VOL#./}"  # Remove o "./" inicial
+    ORIGEM="$DIR_TEMP/$VOL_PATH"
+    DESTINO="$DIR_BASE/$VOL_PATH"
+
+    # Se o volume for um diretório ou arquivo e existir na pasta temp, move ele
+    if [ -e "$ORIGEM" ]; then
+        log "📁 Movendo volume $ORIGEM para $DESTINO"
+        mv "$ORIGEM" "$DESTINO" || log "⚠️ Erro ao mover $ORIGEM, ignorando..."
+    fi
+
+    # Se o destino ainda não existir, cria um diretório vazio
+    if [ ! -e "$DESTINO" ]; then
+        log "📁 Criando volume vazio em $DESTINO"
+        mkdir -p "$DESTINO"
+        chmod 777 -R "$DESTINO"
     fi
 done
 
