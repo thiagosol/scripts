@@ -70,7 +70,7 @@ sudo cp "$DIR_CERTS/letsencrypt/live/thiagosol.com/fullchain.pem" /opt/auto-depl
 sudo cp "$DIR_CERTS/letsencrypt/live/thiagosol.com/privkey.pem" /opt/auto-deploy/certs/https/privkey.pem
 
 log "🚀 Reiniciando o Traefik..."
-docker-compose -f /opt/sol-apis/traefik/docker-compose.yml up -d
+docker-compose -f "$DIR_TRAEFIK/docker-compose.yml" up -d
 
 sudo rm -rf "$DIR_CERTS/letsencrypt"
 sudo rm -rf "$DIR_CERTS/letsencrypt-lib"
