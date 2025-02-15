@@ -84,6 +84,6 @@ docker images -f "dangling=true" -q | xargs -r docker rmi -f
 # 🚀 Subir os containers
 cd "$DIR_BASE" || exit 1
 log "🚀 Iniciando o serviço..."
-docker-compose up -d
+docker-compose down && docker-compose up -d
 
 log "✅ Deploy finalizado!"
