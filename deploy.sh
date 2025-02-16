@@ -79,12 +79,11 @@ rm -rf "$DIR_TEMP"
 docker images -f "dangling=true" -q | xargs -r docker rmi -f
 
 cd "$DIR_BASE" || exit 1
+
 log "🔄 Subindo os containers com Docker Compose..."
-docker-compose down
-ENV_VARS=""
 for VAR in "$@"; do
-    ENV_VARS+="$(echo "$VAR" | awk -F'=' '{print $1"="$2}') "
+    export "$VAR"
 done
-eval "$ENV_VARS docker-compose up -d"
+docker-compose down && docker-compose up -d
 
 log "✅ Deploy finalizado!"
