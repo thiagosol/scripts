@@ -37,17 +37,21 @@ if [ -n "$IMAGEM_EXISTENTE" ]; then
     docker rmi -f "$SERVICO"
 fi
 
-# 🚀 Criar o build da nova imagem
-log "🔨 Construindo a nova imagem..."
-DOCKER_BUILD_CMD="docker build --rm --force-rm -t $SERVICO ."
+# 🚀 Criar o build da nova imagem apenas se existir um Dockerfile
+if [ -f "$DIR_TEMP/Dockerfile" ]; then
+    log "🔨 Construindo a nova imagem..."
+    DOCKER_BUILD_CMD="docker build --rm --force-rm -t $SERVICO $DIR_TEMP"
 
-# Passar variáveis de ambiente para o build
-shift 2
-for VAR in "$@"; do
-    DOCKER_BUILD_CMD+=" --build-arg $VAR"
-done
+    # Passar variáveis de ambiente para o build
+    shift 2
+    for VAR in "$@"; do
+        DOCKER_BUILD_CMD+=" --build-arg $VAR"
+    done
 
-eval "$DOCKER_BUILD_CMD"
+    eval "$DOCKER_BUILD_CMD"
+else
+    log "⚠️ Nenhum Dockerfile encontrado em $DIR_TEMP. Pulando etapa de build."
+fi
 
 # 🚀 Mover `docker-compose.yml` para a raiz do diretório de trabalho
 log "📂 Movendo docker-compose.yml para $DIR_BASE"
