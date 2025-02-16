@@ -1,1 +1,1 @@
-thiagosol.com soldance.com.br api.soldance.com.br espetaculo.soldance.com.br adm.soldance.com.br api.adm.soldance.com.br soracha.thiagosol.com traefik.thiagosol.com api.leilao.thiagosol.com deploy.thiagosol.com web.deploy.thiagosol.com log.thiagosol.com
+thiagosol.com soldance.com.br api.soldance.com.br espetaculo.soldance.com.br adm.soldance.com.br api.adm.soldance.com.br soracha.thiagosol.com traefik.thiagosol.com api.leilao.thiagosol.com deploy.thiagosol.com web.deploy.thiagosol.com log.thiagosol.com shell.thiagosol.com api.shell.thiagosol.com
