@@ -16,15 +16,15 @@ cd "$DIR_TEMP" || exit 1
 log "📥 Baixando o repositório $GIT_REPO na branch $BRANCH..."
 git clone --depth=1 --branch "$BRANCH" "$GIT_REPO" .
 
-if [ ! -f "$DIR_TEMP/Dockerfile" ]; then
-
-    log "⚠️ Nenhum Dockerfile encontrado. Apenas copiando arquivos para $DIR_BASE e finalizando."
+if [ ! -f "$DIR_TEMP/Dockerfile" ] && [ -z "$(find "$DIR_TEMP" -maxdepth 1 -type f -name 'docker-compose*.yml' -print -quit)" ]; then
+    log "⚠️ Nenhum Dockerfile ou arquivo docker-compose.yml encontrado. Apenas copiando arquivos para $DIR_BASE e finalizando."
     cp -r "$DIR_TEMP/"* "$DIR_BASE/"
     find "$DIR_BASE" -type f -name "*.sh" -exec chmod +x {} \;
     rm -rf "$DIR_TEMP"
     log "✅ Deploy sem docker finalizado!"
     exit 0
 fi
+
 
 log "🔥 Removendo imagens antigas..."
 IMAGEM_EXISTENTE=$(docker images -q "$SERVICO")
