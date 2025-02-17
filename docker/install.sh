@@ -39,6 +39,12 @@ if ! docker network ls | grep -q "external-sol-apis"; then
 else
     echo "✅ Rede 'external-sol-apis' já existe."
 fi
+if ! docker network ls | grep -q "wetty-network"; then
+    echo "🌐 Criando a rede 'wetty-network'"
+    docker network create --attachable wetty-network
+else
+    echo "✅ Rede 'wetty-network' já existe."
+fi
 
 echo "🔍 Atualizando '/etc/hosts' com o IP fixo do Loki..."
 sudo sed -i "/loki/d" /etc/hosts
