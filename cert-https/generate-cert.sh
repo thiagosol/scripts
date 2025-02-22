@@ -30,6 +30,7 @@ fi
 
 log "🗑️ Removendo certificados antigos..."
 sudo rm -rf "$DIR_CERTS/letsencrypt"
+sudo rm -rf "$DIR_CERTS/letsencrypt-lib"
 
 log "🔐 Solicitando novo certificado para: $DOMINIO"
 expect <<EOF
@@ -71,8 +72,5 @@ sudo cp "$DIR_CERTS/letsencrypt/live/thiagosol.com/privkey.pem" /opt/auto-deploy
 
 log "🚀 Reiniciando o Traefik..."
 docker-compose -f "$DIR_TRAEFIK/docker-compose.yml" up -d
-
-sudo rm -rf "$DIR_CERTS/letsencrypt"
-sudo rm -rf "$DIR_CERTS/letsencrypt-lib"
 
 log "✅ Certificado atualizado e Traefik reiniciado com sucesso!"
