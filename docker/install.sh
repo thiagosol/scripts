@@ -45,6 +45,12 @@ if ! docker network ls | grep -q "wetty-network"; then
 else
     echo "✅ Rede 'wetty-network' já existe."
 fi
+if ! docker network ls | grep -q "chat-network"; then
+    echo "🌐 Criando a rede 'chat-network'"
+    docker network create --attachable chat-network
+else
+    echo "✅ Rede 'chat-network' já existe."
+fi
 
 echo "🔍 Atualizando '/etc/hosts' com o IP fixo do Loki..."
 sudo sed -i "/loki/d" /etc/hosts
