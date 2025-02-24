@@ -39,7 +39,7 @@ shift 2
 
 if [ -f "$DIR_TEMP/Dockerfile" ]; then
     log "🔨 Construindo a nova imagem..."
-    DOCKER_BUILD_CMD="docker build --memory=4g --cpus=0.7 --rm --force-rm -t $SERVICO $DIR_TEMP"
+    DOCKER_BUILD_CMD="docker build --memory=4g --rm --force-rm -t $SERVICO $DIR_TEMP"
 
     for VAR in "$@"; do
         DOCKER_BUILD_CMD+=" --build-arg $VAR"
