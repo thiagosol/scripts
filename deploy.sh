@@ -5,10 +5,11 @@ log() {
 }
 
 SERVICO=$1
-BRANCH=${2:-main}
+GIT_USER=${2:-thiagosol}
+BRANCH="main"
 DIR_BASE="/opt/auto-deploy/$SERVICO"
 DIR_TEMP="$DIR_BASE/temp"
-GIT_REPO="https://github.com/thiagosol/$SERVICO.git"
+GIT_REPO="https://github.com/$GIT_USER/$SERVICO.git"
 
 mkdir -p "$DIR_TEMP"
 cd "$DIR_TEMP" || exit 1
