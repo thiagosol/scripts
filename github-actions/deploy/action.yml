@@ -88,9 +88,9 @@ runs:
             LAST_UPDATE_TIME=$(date +%s)  # Atualiza o tempo da última mudança
           fi
 
-          # Se não houver novas linhas por 5 minutos, falha
-          if [ $NO_UPDATE_ELAPSED -gt 300 ]; then
-            echo "❌ Nenhuma nova linha no log em 5 minutos. Deploy travado."
+          # Se não houver novas linhas por 10 minutos, falha
+          if [ $NO_UPDATE_ELAPSED -gt 600 ]; then
+            echo "❌ Nenhuma nova linha no log em 10 minutos. Deploy travado."
             exit 1
           fi
 
