@@ -1,0 +1,19 @@
+name: Deploy Automático
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy
+        uses: thiagosol/scripts/.github/actions/deploy@main
+        with:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
