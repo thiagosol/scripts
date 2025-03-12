@@ -1,6 +1,10 @@
 name: Finish Deploy
 
 on:
+  workflow_run:
+    workflows: ["Start Deploy"]
+    types:
+      - completed
   repository_dispatch:
     types: [deploy_finished]
 
