@@ -25,12 +25,18 @@ runs:
     - name: Read secrets from JSON file
       id: secrets
       run: |
-        echo "SECRETS_ENV_VARS=[]" >> $GITHUB_ENV
+        # Criar um arquivo temporário JSON para armazenar as secrets corretamente
+        echo '{}' > secrets_env_vars.json
+
         for key in $(jq -r 'keys_unsorted[]' secrets.json); do
           value=$(jq -r --arg key "$key" '.[$key]' secrets.json)
           echo "::add-mask::$value" 
+
+          # Adiciona ao ambiente do GitHub Actions
           echo "$key=$value" >> $GITHUB_ENV
-          echo "SECRETS_ENV_VARS+=(\"$key=$value\")" >> $GITHUB_ENV
+
+          # Adiciona ao JSON temporário corretamente
+          jq --arg key "$key" --arg value "$value" '. + {($key): $value}' secrets_env_vars.json > temp.json && mv temp.json secrets_env_vars.json
         done
       shell: bash
 
@@ -40,7 +46,8 @@ runs:
         echo "DEPLOY_USER: $DEPLOY_USER"
         echo "DEPLOY_PASS: $DEPLOY_PASS"
         echo "GH_TOKEN: ${GH_TOKEN:0:5}*** (masked)"
-        echo "SECRETS_ENV_VARS: ${SECRETS_ENV_VARS[*]}"
+        echo "🔍 Secrets JSON file content:"
+        cat secrets_env_vars.json
       shell: bash
 
     - name: Call Deploy API
@@ -48,7 +55,8 @@ runs:
         AUTH="${DEPLOY_USER}:${DEPLOY_PASS}"
         echo "::add-mask::$AUTH"
 
-        JSON_ENV_VARS=$(printf '%s\n' "${SECRETS_ENV_VARS[@]}" | jq -R . | jq -s .)
+        # Lendo o JSON das secrets corretamente
+        JSON_ENV_VARS=$(cat secrets_env_vars.json)
 
         echo "🔍 JSON_ENV_VARS being sent: $JSON_ENV_VARS"
 
