@@ -25,13 +25,11 @@ runs:
     - name: Read secrets from JSON file
       id: secrets
       run: |
-        echo "SECRETS_ENV_VARS=[]" >> $GITHUB_ENV
-        for key in $(jq -r 'keys_unsorted[]' secrets.json); do
-          value=$(jq -r --arg key "$key" '.[$key]' secrets.json)
-          echo "::add-mask::$value" 
-          echo "$key=$value" >> $GITHUB_ENV
-          echo "SECRETS_ENV_VARS+=(\"$key=$value\")" >> $GITHUB_ENV
-        done
+        SECRETS_ENV_VARS=()
+        while IFS="=" read -r key value; do
+          SECRETS_ENV_VARS+=("\"$key=$value\"")
+          echo "::add-mask::$value"
+        done < <(jq -r 'to_entries | .[] | "\(.key)=\(.value)"' secrets.json)
       shell: bash
 
     - name: Call Deploy API
@@ -78,7 +76,7 @@ runs:
           LOGS=$(curl -u "$AUTH" -s "$LOG_URL")
 
           if [ -n "$LAST_LOG" ]; then
-            NEW_LOGS=$(comm -13 <(echo "$LAST_LOG") <(echo "$LOGS"))
+            NEW_LOGS=$(diff <(echo "$LAST_LOG") <(echo "$LOGS") | grep "^>" | cut -c3-)
           else
             NEW_LOGS="$LOGS"
           fi
