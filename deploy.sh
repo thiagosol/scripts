@@ -30,9 +30,12 @@ GIT_REPO="https://github.com/$GIT_USER/$SERVICE.git"
 
 shift 2
 
+log "AAAA VAR: $3"
+log "AAAA VAR: $4"
+log "AAAA VAR: $@"
+
 # Export all passed variables (so GH_TOKEN is available)
 for VAR in "$@"; do
-    log "AAAA VAR: $VAR"
     if [[ "$VAR" =~ ^[a-zA-Z_][a-zA-Z0-9_]*=.*$ ]]; then
         export "$VAR"
     else
