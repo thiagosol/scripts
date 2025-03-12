@@ -1,0 +1,57 @@
+name: "Finish Deploy"
+description: "Waits for the server webhook and fetches the final logs"
+inputs:
+  GH_TOKEN:
+    description: "GitHub token"
+    required: true
+  LOG_URL:
+    description: "Deploy logs URL"
+    default: "https://deploy.thiagosol.com/logs"
+runs:
+  using: "composite"
+  steps:
+    - name: Load Secrets from GitHub
+      run: |
+        echo "SECRETS_ENV_VARS=[]" >> $GITHUB_ENV
+        for key in $(jq -r 'keys_unsorted[]' secrets.json); do
+          value=$(jq -r --arg key "$key" '.[$key]' secrets.json)
+          echo "::add-mask::$value"
+          echo "$key=$value" >> $GITHUB_ENV
+          echo "SECRETS_ENV_VARS+=(\"$key=$value\")" >> $GITHUB_ENV
+        done
+      shell: bash
+
+    - name: Set Authentication Credentials
+      run: |
+        AUTH="${DEPLOY_USER}:${DEPLOY_PASS}"
+        echo "::add-mask::$AUTH"
+        echo "AUTH=$AUTH" >> $GITHUB_ENV
+      shell: bash
+
+    - name: Fetch Deployment Logs
+      run: |
+        SERVICE="${{ github.event.client_payload.service }}"
+        STATUS="${{ github.event.client_payload.status }}"
+        MESSAGE="${{ github.event.client_payload.message }}"
+        LOG_URL="${{ inputs.LOG_URL }}/$SERVICE"
+
+        echo "🚀 Deployment Result: $STATUS"
+        echo "ℹ Message: $MESSAGE"
+
+        echo "🟡 Fetching logs from: $LOG_URL"
+        LOGS=$(curl -u "$AUTH" -s "$LOG_URL")
+
+        if [ -z "$LOGS" ]; then
+          echo "⚠️ No logs found!"
+        else
+          echo "$LOGS"
+        fi
+
+        if [ "$STATUS" == "success" ]; then
+          echo "✅ Deployment completed successfully!"
+          exit 0
+        else
+          echo "❌ Deployment failed: $MESSAGE"
+          exit 1
+        fi
+      shell: bash

@@ -1,8 +1,8 @@
-name: "Auto Deploy"
-description: "Execution of the deploy by calling the service and monitoring the logs"
+name: "Start Deploy"
+description: "Triggers the deployment by calling the API"
 inputs:
   GH_TOKEN:
-    description: "GitHub token to clone secrets repository"
+    description: "GitHub token to authenticate"
     required: true
   GH_USER:
     description: "GitHub user owner of the repository"
@@ -58,57 +58,4 @@ runs:
         fi
 
         echo "🚀 Deploy started for ${{ github.event.repository.name }}!"
-      shell: bash
-
-    - name: Wait for Deploy Completion (Max. 30 Minutes)
-      run: |
-        LOG_URL="${{ inputs.LOG_URL }}/${{ github.event.repository.name }}"
-        AUTH="${DEPLOY_USER}:${DEPLOY_PASS}"
-        echo "::add-mask::$AUTH" 
-
-        echo "🟡 Monitoring logs in: $LOG_URL"
-        echo "⏳ Waiting up to 30 minutes for the deploy..."
-
-        START_TIME=$(date +%s)
-        TIMEOUT=$((30 * 60)) 
-        LAST_LOG=""
-        LAST_UPDATE_TIME=$(date +%s) 
-
-        while true; do
-          CURRENT_TIME=$(date +%s)
-          ELAPSED=$((CURRENT_TIME - START_TIME))
-          NO_UPDATE_ELAPSED=$((CURRENT_TIME - LAST_UPDATE_TIME))
-
-          if [ $ELAPSED -gt $TIMEOUT ]; then
-            echo "❌ Timeout of 30 minutes reached. Cancelling deploy..."
-            exit 1
-          fi
-
-          LOGS=$(curl -u "$AUTH" -s "$LOG_URL")
-
-          if echo "$LOGS" | grep -qE "Deploy finalizado!|Deploy sem docker finalizado!"; then
-            echo "✅ Deploy completed successfully!"
-            exit 0
-          fi
-
-          if [ -n "$LAST_LOG" ]; then
-            NEW_LOGS=$(diff <(echo "$LAST_LOG") <(echo "$LOGS") | grep "^>" | cut -c3- || true)
-          else
-            NEW_LOGS="$LOGS"
-          fi
-
-          if [ -n "$NEW_LOGS" ]; then
-            echo "$NEW_LOGS"
-            LAST_LOG="$LOGS"
-            LAST_UPDATE_TIME=$(date +%s) 
-          fi
-
-          if [ $NO_UPDATE_ELAPSED -gt 600 ]; then
-            echo "❌ No new lines in the log in 10 minutes. Deploy blocked."
-            exit 1
-          fi
-
-          sleep 10
-        done
-
       shell: bash

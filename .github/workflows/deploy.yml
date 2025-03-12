@@ -13,7 +13,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy
-        uses: thiagosol/scripts/.github/actions/deploy@main
+      - name: Start Deploy
+        uses: thiagosol/scripts/.github/actions/start-deploy@main
+        with:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+      - name: Finish Deploy
+        uses: thiagosol/scripts/.github/actions/finish-deploy@main
         with:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
