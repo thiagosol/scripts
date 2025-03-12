@@ -32,7 +32,6 @@ runs:
           echo "$key=$value" >> $GITHUB_ENV
           SECRETS_ARRAY=$(echo "$SECRETS_ARRAY" | jq --arg entry "$key=$value" '. + [$entry]')
         done
-        SECRETS_ARRAY=$(echo "$SECRETS_ARRAY" | jq --arg entry "GITHUB_RUN_ID=${{ github.run_id }}" '. + [$entry]')
         echo "SECRETS_ENV_VARS=$(echo "$SECRETS_ARRAY" | jq -c .)" >> $GITHUB_ENV
       shell: bash
 
