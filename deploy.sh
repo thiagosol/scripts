@@ -16,7 +16,7 @@ notify_github() {
         curl -X POST "https://api.github.com/repos/thiagosol/$SERVICE/dispatches" \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: token $GH_TOKEN" \
-            -d "{\"event_type\": \"deploy_finished\", \"client_payload\": {\"status\": \"$status\", \"message\": \"$message\", \"service\": \"$SERVICE\"}}"
+            -d "{\"event_type\": \"deploy_finished\", \"client_payload\": {\"status\": \"$status\", \"message\": \"$message\", \"service\": \"$SERVICE\",  \"run_id\": \"$GITHUB_RUN_ID\"}}"
     fi
 }
 
