@@ -25,11 +25,13 @@ runs:
     - name: Read secrets from JSON file
       id: secrets
       run: |
-        SECRETS_ENV_VARS=()
-        while IFS="=" read -r key value; do
-          SECRETS_ENV_VARS+=("\"$key=$value\"")
-          echo "::add-mask::$value"
-        done < <(jq -r 'to_entries | .[] | "\(.key)=\(.value)"' secrets.json)
+        echo "SECRETS_ENV_VARS=[]" >> $GITHUB_ENV
+        for key in $(jq -r 'keys_unsorted[]' secrets.json); do
+          value=$(jq -r --arg key "$key" '.[$key]' secrets.json)
+          echo "::add-mask::$value" 
+          echo "$key=$value" >> $GITHUB_ENV
+          echo "SECRETS_ENV_VARS+=(\"$key=$value\")" >> $GITHUB_ENV
+        done
       shell: bash
 
     - name: Call Deploy API
@@ -39,14 +41,23 @@ runs:
 
         JSON_ENV_VARS=$(printf '%s\n' "${SECRETS_ENV_VARS[@]}" | jq -R . | jq -s .)
 
-        curl -X POST "${{ inputs.DEPLOY_URL }}" \
+        RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X POST "${{ inputs.DEPLOY_URL }}" \
           -u "$AUTH" \
           -H "Content-Type: application/json" \
           -d '{
             "service": "${{ github.event.repository.name }}",
             "branch": "${{ inputs.GH_USER }}",
             "env_vars": '"$JSON_ENV_VARS"'
-          }'
+          }')
+
+        if [ "$RESPONSE" -ne 200 ]; then
+          echo "❌ Error calling the deploy API! HTTP code: $RESPONSE"
+          echo "ℹ Deploy API response:"
+          cat response.json
+          exit 1
+        fi
+
+        echo "🚀 Deploy started for ${{ github.event.repository.name }}!"
       shell: bash
 
     - name: Wait for Deploy Completion (Max. 30 Minutes)
@@ -78,8 +89,9 @@ runs:
           if [ -n "$LAST_LOG" ]; then
             NEW_LOGS=$(diff <(echo "$LAST_LOG") <(echo "$LOGS") | grep "^>" | cut -c3-)
           else
-            NEW_LOGS="$LOGS"
+            NEW_LOGS="$LOGS"  # Exibe tudo na primeira iteração
           fi
+
 
           if [ -n "$NEW_LOGS" ]; then
             echo "$NEW_LOGS"
