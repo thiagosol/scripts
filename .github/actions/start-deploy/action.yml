@@ -34,12 +34,23 @@ runs:
         done
       shell: bash
 
+    - name: Debug environment variables before calling API
+      run: |
+        echo "🔍 Debugging environment variables:"
+        echo "DEPLOY_USER: $DEPLOY_USER"
+        echo "DEPLOY_PASS: $DEPLOY_PASS"
+        echo "GH_TOKEN: ${GH_TOKEN:0:5}*** (masked)"
+        echo "SECRETS_ENV_VARS: ${SECRETS_ENV_VARS[*]}"
+      shell: bash
+
     - name: Call Deploy API
       run: |
         AUTH="${DEPLOY_USER}:${DEPLOY_PASS}"
         echo "::add-mask::$AUTH"
 
         JSON_ENV_VARS=$(printf '%s\n' "${SECRETS_ENV_VARS[@]}" | jq -R . | jq -s .)
+
+        echo "🔍 JSON_ENV_VARS being sent: $JSON_ENV_VARS"
 
         RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X POST "${{ inputs.DEPLOY_URL }}" \
           -u "$AUTH" \
@@ -49,6 +60,8 @@ runs:
             "branch": "${{ inputs.GH_USER }}",
             "env_vars": '"$JSON_ENV_VARS"'
           }')
+
+        echo "🔍 API Response Code: $RESPONSE"
 
         if [ "$RESPONSE" -ne 200 ]; then
           echo "❌ Error calling the deploy API! HTTP code: $RESPONSE"
