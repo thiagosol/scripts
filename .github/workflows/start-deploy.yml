@@ -17,3 +17,10 @@ jobs:
         uses: thiagosol/scripts/.github/actions/start-deploy@main
         with:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+
+  finish-deploy:
+    needs: start-deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for Webhook (Finish Deploy)
+        run: echo "Aguardando webhook para finalizar deploy..."
