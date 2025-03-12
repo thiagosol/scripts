@@ -1,90 +1,112 @@
 #!/bin/bash
 
+# Function to log messages
 log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
 }
 
-SERVICO=$1
+# Function to send webhook to GitHub Actions (only if GH_TOKEN is available)
+notify_github() {
+    if [ -n "$GH_TOKEN" ]; then
+        local status="$1"
+        local message="$2"
+        
+        log "🔔 Notifying GitHub Actions: $status"
+
+        curl -X POST "https://api.github.com/repos/thiagosol/$SERVICE/dispatches" \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: token $GH_TOKEN" \
+            -d "{\"event_type\": \"deploy_finished\", \"client_payload\": {\"status\": \"$status\", \"message\": \"$message\"}}"
+    fi
+}
+
+# Define variables
+SERVICE=$1
 GIT_USER=${2:-thiagosol}
 BRANCH="main"
-DIR_BASE="/opt/auto-deploy/$SERVICO"
-DIR_TEMP="$DIR_BASE/temp"
-GIT_REPO="https://github.com/$GIT_USER/$SERVICO.git"
-
-mkdir -p "$DIR_TEMP"
-cd "$DIR_TEMP" || exit 1
-
-log "📥 Baixando o repositório $GIT_REPO na branch $BRANCH..."
-git clone --depth=1 --branch "$BRANCH" "$GIT_REPO" .
-
-if [ ! -f "$DIR_TEMP/Dockerfile" ] && [ -z "$(find "$DIR_TEMP" -maxdepth 1 -type f -name 'docker-compose*.yml' -print -quit)" ]; then
-    log "⚠️ Nenhum Dockerfile ou arquivo docker-compose.yml encontrado. Apenas copiando arquivos para $DIR_BASE e finalizando."
-    cp -r "$DIR_TEMP/"* "$DIR_BASE/"
-    find "$DIR_BASE" -type f -name "*.sh" -exec chmod +x {} \;
-    rm -rf "$DIR_TEMP"
-    log "✅ Deploy sem docker finalizado!"
-    exit 0
-fi
-
-
-log "🔥 Removendo imagens antigas..."
-IMAGEM_EXISTENTE=$(docker images -q "$SERVICO")
-if [ -n "$IMAGEM_EXISTENTE" ]; then
-    log "📌 Encontrado: removendo containers e imagens..."
-    docker ps -q --filter "ancestor=$SERVICO" | xargs -r docker stop
-    docker ps -aq --filter "ancestor=$SERVICO" | xargs -r docker rm
-    docker rmi -f "$SERVICO"
-fi
+BASE_DIR="/opt/auto-deploy/$SERVICE"
+TEMP_DIR="$BASE_DIR/temp"
+GIT_REPO="https://github.com/$GIT_USER/$SERVICE.git"
 
 shift 2
 
-if [ -f "$DIR_TEMP/Dockerfile" ]; then
-    log "🔨 Construindo a nova imagem..."
-    DOCKER_BUILD_CMD="docker build --memory=4g --rm --force-rm -t $SERVICO $DIR_TEMP"
+# Export all passed variables (so GH_TOKEN is available)
+for VAR in "$@"; do
+    export "$VAR"
+done
+
+mkdir -p "$TEMP_DIR"
+cd "$TEMP_DIR" || { log "ERROR: Failed to access temp directory"; notify_github "failure" "Failed to access temp directory"; exit 1; }
+
+log "📥 Cloning repository $GIT_REPO (branch: $BRANCH)..."
+git clone --depth=1 --branch "$BRANCH" "$GIT_REPO" . || { log "ERROR: Git clone failed"; notify_github "failure" "Git clone failed"; exit 1; }
+
+# Check if Dockerfile or docker-compose.yml exists
+if [ ! -f "$TEMP_DIR/Dockerfile" ] && [ -z "$(find "$TEMP_DIR" -maxdepth 1 -type f -name 'docker-compose*.yml' -print -quit)" ]; then
+    log "⚠️ No Dockerfile or docker-compose.yml found. Copying files and finishing deployment."
+    cp -r "$TEMP_DIR/"* "$BASE_DIR/"
+    find "$BASE_DIR" -type f -name "*.sh" -exec chmod +x {} \;
+    rm -rf "$TEMP_DIR"
+    log "✅ Deployment completed without Docker!"
+    notify_github "success" "Deployment completed without Docker"
+    exit 0
+fi
+
+log "🔥 Removing old images..."
+EXISTING_IMAGE=$(docker images -q "$SERVICE")
+if [ -n "$EXISTING_IMAGE" ]; then
+    log "📌 Found existing image. Stopping and removing..."
+    docker ps -q --filter "ancestor=$SERVICE" | xargs -r docker stop
+    docker ps -aq --filter "ancestor=$SERVICE" | xargs -r docker rm
+    docker rmi -f "$SERVICE"
+fi
+
+if [ -f "$TEMP_DIR/Dockerfile" ]; then
+    log "🔨 Building new Docker image..."
+    DOCKER_BUILD_CMD="docker build --memory=4g --rm --force-rm -t $SERVICE $TEMP_DIR"
 
     for VAR in "$@"; do
         DOCKER_BUILD_CMD+=" --build-arg $VAR"
     done
 
-    eval "$DOCKER_BUILD_CMD"
+    eval "$DOCKER_BUILD_CMD" || { log "ERROR: Docker build failed"; notify_github "failure" "Docker build failed"; exit 1; }
 else
-    log "⚠️ Nenhum Dockerfile encontrado em $DIR_TEMP. Pulando etapa de build."
+    log "⚠️ No Dockerfile found. Skipping build step."
 fi
 
-log "📂 Movendo docker-compose.yml para $DIR_BASE"
-mv "$DIR_TEMP/docker-compose.yml" "$DIR_BASE/"
+log "📂 Moving docker-compose.yml to $BASE_DIR..."
+mv "$TEMP_DIR/docker-compose.yml" "$BASE_DIR/" || { log "ERROR: Failed to move docker-compose.yml"; notify_github "failure" "Failed to move docker-compose.yml"; exit 1; }
 
-log "🛠️ Verificando volumes..."
-VOLUMES=$(grep -oP '(?<=- \./)[^:]+' "$DIR_BASE/docker-compose.yml")
+log "🛠️ Checking volumes..."
+VOLUMES=$(grep -oP '(?<=- \./)[^:]+' "$BASE_DIR/docker-compose.yml")
 
 for VOL in $VOLUMES; do
-    ORIGEM="$DIR_TEMP/$VOL"
-    DESTINO="$DIR_BASE/$VOL"
+    SRC="$TEMP_DIR/$VOL"
+    DEST="$BASE_DIR/$VOL"
 
-    if [ -e "$ORIGEM" ]; then
-        log "📁 Movendo volume $ORIGEM para $DESTINO"
-        mv "$ORIGEM" "$DESTINO" || log "⚠️ Erro ao mover $ORIGEM, ignorando..."
+    if [ -e "$SRC" ]; then
+        log "📁 Moving volume $SRC to $DEST..."
+        mv "$SRC" "$DEST" || log "ERROR: Failed to move $SRC, skipping..."
     else
-        log "❌ Volume $ORIGEM não encontrado no temp, ignorando..."
+        log "❌ Volume $SRC not found, skipping..."
     fi
 
-    if [ ! -e "$DESTINO" ]; then
-        log "📁 Criando volume vazio em $DESTINO"
-        mkdir -p "$DESTINO"
-        chmod 777 -R "$DESTINO"
+    if [ ! -e "$DEST" ]; then
+        log "📁 Creating empty volume at $DEST..."
+        mkdir -p "$DEST"
+        chmod 777 -R "$DEST"
     fi
 done
 
-log "🛠️ Limpeza dos diretórios temporários e imagens..."
-rm -rf "$DIR_TEMP"
+log "🛠️ Cleaning temporary directories and unused images..."
+rm -rf "$TEMP_DIR"
 docker images -f "dangling=true" -q | xargs -r docker rmi -f
 
-cd "$DIR_BASE" || exit 1
+cd "$BASE_DIR" || { log "ERROR: Failed to access base directory"; notify_github "failure" "Failed to access base directory"; exit 1; }
 
-log "🔄 Subindo os containers com Docker Compose..."
-for VAR in "$@"; do
-    export "$VAR"
-done
-docker-compose down && docker-compose up -d
+log "🔄 Restarting containers with Docker Compose..."
+docker-compose down && docker-compose up -d || { log "ERROR: Docker Compose failed"; notify_github "failure" "Docker Compose failed"; exit 1; }
 
-log "✅ Deploy finalizado!"
+log "✅ Deployment completed successfully!"
+notify_github "success" "Deployment completed successfully"
+exit 0
