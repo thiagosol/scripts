@@ -41,11 +41,7 @@ runs:
         echo "🟡 Fetching logs from: $LOG_URL"
         LOGS=$(curl -u "$AUTH" -s "$LOG_URL")
 
-        if [ -z "$LOGS" ]; then
-          echo "⚠️ No logs found!"
-        else
-          echo "$LOGS"
-        fi
+        echo "$LOGS"
 
         if [ "$STATUS" == "success" ]; then
           echo "✅ Deployment completed successfully!"
