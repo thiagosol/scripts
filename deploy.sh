@@ -7,16 +7,24 @@ log() {
 
 # Function to send webhook to GitHub Actions (only if GH_TOKEN is available)
 notify_github() {
-    if [ -n "$GH_TOKEN" ]; then
+    if [ -n "$GH_TOKEN" ] && [ -n "$GITHUB_RUN_ID" ]; then
+    
         local status="$1"
         local message="$2"
-        
-        log "🔔 Notifying GitHub Actions: $status"
 
-        curl -X POST "https://api.github.com/repos/thiagosol/$SERVICE/dispatches" \
-            -H "Accept: application/vnd.github+json" \
+        log "🔔 Notifying GitHub Actions Finish Deploy"
+
+        curl -X POST "https://api.github.com/repos/thiagosol/$SERVICE/actions/runs/$GITHUB_RUN_ID/dispatches" \
             -H "Authorization: token $GH_TOKEN" \
-            -d "{\"event_type\": \"deploy_finished\", \"client_payload\": {\"status\": \"$status\", \"message\": \"$message\", \"service\": \"$SERVICE\"}}"
+            -H "Accept: application/vnd.github+json" \
+            -d '{
+            "event_type": "deploy_finished",
+            "client_payload": {
+                "service": "'"$SERVICE"'",
+                "status": "'"$status"'",
+                "message": "'"$message"'"
+              }
+            }'
     fi
 }
 
@@ -29,10 +37,6 @@ TEMP_DIR="$BASE_DIR/temp"
 GIT_REPO="https://github.com/$GIT_USER/$SERVICE.git"
 
 shift 2
-
-log "AAAA VAR: $3"
-log "AAAA VAR: $4"
-log "AAAA VAR: $@"
 
 # Export all passed variables (so GH_TOKEN is available)
 for VAR in "$@"; do
