@@ -25,19 +25,22 @@ runs:
     - name: Read secrets from JSON file
       id: secrets
       run: |
-        # Criar um arquivo temporário JSON para armazenar as secrets corretamente
-        echo '{}' > secrets_env_vars.json
+        # Inicializa um array vazio no formato correto
+        SECRETS_ARRAY="[]"
 
         for key in $(jq -r 'keys_unsorted[]' secrets.json); do
           value=$(jq -r --arg key "$key" '.[$key]' secrets.json)
-          echo "::add-mask::$value" 
+          echo "::add-mask::$value"
 
           # Adiciona ao ambiente do GitHub Actions
           echo "$key=$value" >> $GITHUB_ENV
 
-          # Adiciona ao JSON temporário corretamente
-          jq --arg key "$key" --arg value "$value" '. + {($key): $value}' secrets_env_vars.json > temp.json && mv temp.json secrets_env_vars.json
+          # Adiciona no array no formato ["VAR=VAL", "VAR2=VAL2"]
+          SECRETS_ARRAY=$(echo "$SECRETS_ARRAY" | jq --arg entry "$key=$value" '. + [$entry]')
         done
+
+        # Salva o array no ambiente
+        echo "SECRETS_ENV_VARS=$SECRETS_ARRAY" >> $GITHUB_ENV
       shell: bash
 
     - name: Debug environment variables before calling API
@@ -46,8 +49,7 @@ runs:
         echo "DEPLOY_USER: $DEPLOY_USER"
         echo "DEPLOY_PASS: $DEPLOY_PASS"
         echo "GH_TOKEN: ${GH_TOKEN:0:5}*** (masked)"
-        echo "🔍 Secrets JSON file content:"
-        cat secrets_env_vars.json
+        echo "🔍 SECRETS_ENV_VARS being sent: $SECRETS_ENV_VARS"
       shell: bash
 
     - name: Call Deploy API
@@ -55,10 +57,7 @@ runs:
         AUTH="${DEPLOY_USER}:${DEPLOY_PASS}"
         echo "::add-mask::$AUTH"
 
-        # Lendo o JSON das secrets corretamente
-        JSON_ENV_VARS=$(cat secrets_env_vars.json)
-
-        echo "🔍 JSON_ENV_VARS being sent: $JSON_ENV_VARS"
+        echo "🔍 JSON_ENV_VARS being sent: $SECRETS_ENV_VARS"
 
         RESPONSE=$(curl -s -o response.json -w "%{http_code}" -X POST "${{ inputs.DEPLOY_URL }}" \
           -u "$AUTH" \
@@ -66,7 +65,7 @@ runs:
           -d '{
             "service": "${{ github.event.repository.name }}",
             "branch": "${{ inputs.GH_USER }}",
-            "env_vars": '"$JSON_ENV_VARS"'
+            "env_vars": '"$SECRETS_ENV_VARS"'
           }')
 
         echo "🔍 API Response Code: $RESPONSE"
