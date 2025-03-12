@@ -7,6 +7,9 @@ inputs:
   LOG_URL:
     description: "Deploy logs URL"
     default: "https://deploy.thiagosol.com/logs"
+  RUN_ID:
+    description: "GitHub Run ID from the original workflow"
+    required: true
 runs:
   using: "composite"
   steps:

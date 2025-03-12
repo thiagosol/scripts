@@ -7,8 +7,10 @@ on:
 jobs:
   finish-deploy:
     runs-on: ubuntu-latest
+    if: github.event.client_payload.run_id != ''
     steps:
       - name: Finish Deploy
         uses: thiagosol/scripts/.github/actions/finish-deploy@main
         with:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          RUN_ID: ${{ github.event.client_payload.run_id }}
