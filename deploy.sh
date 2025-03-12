@@ -32,7 +32,11 @@ shift 2
 
 # Export all passed variables (so GH_TOKEN is available)
 for VAR in "$@"; do
-    export "$VAR"
+    if [[ "$VAR" =~ ^[a-zA-Z_][a-zA-Z0-9_]*=.*$ ]]; then
+        export "$VAR"
+    else
+        log "⚠️ Skipping invalid variable: $VAR"
+    fi
 done
 
 mkdir -p "$TEMP_DIR"
