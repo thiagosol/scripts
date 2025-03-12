@@ -7,24 +7,16 @@ log() {
 
 # Function to send webhook to GitHub Actions (only if GH_TOKEN is available)
 notify_github() {
-    if [ -n "$GH_TOKEN" ] && [ -n "$GITHUB_RUN_ID" ]; then
-    
+    if [ -n "$GH_TOKEN" ]; then
         local status="$1"
         local message="$2"
+        
+        log "🔔 Notifying GitHub Actions: $status"
 
-        log "🔔 Notifying GitHub Actions Finish Deploy"
-
-        curl -X POST "https://api.github.com/repos/thiagosol/$SERVICE/actions/runs/$GITHUB_RUN_ID/dispatches" \
-            -H "Authorization: token $GH_TOKEN" \
+        curl -X POST "https://api.github.com/repos/thiagosol/$SERVICE/dispatches" \
             -H "Accept: application/vnd.github+json" \
-            -d '{
-            "event_type": "deploy_finished",
-            "client_payload": {
-                "service": "'"$SERVICE"'",
-                "status": "'"$status"'",
-                "message": "'"$message"'"
-              }
-            }'
+            -H "Authorization: token $GH_TOKEN" \
+            -d "{\"event_type\": \"deploy_finished\", \"client_payload\": {\"status\": \"$status\", \"message\": \"$message\", \"service\": \"$SERVICE\"}}"
     fi
 }
 
