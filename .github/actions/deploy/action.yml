@@ -71,13 +71,17 @@ runs:
           NO_UPDATE_ELAPSED=$((CURRENT_TIME - LAST_UPDATE_TIME))
 
           if [ $ELAPSED -gt $TIMEOUT ]; then
-            echo "❌ Tempo limite de 30 minutos atingido. Cancelando deploy..."
+            echo "❌ Timeout of 30 minutes reached. Cancelling deploy..."
             exit 1
           fi
 
           LOGS=$(curl -u "$AUTH" -s "$LOG_URL")
 
-          NEW_LOGS=$(diff --changed-group-format='%>' --unchanged-group-format='' <(echo "$LAST_LOG") <(echo "$LOGS"))
+          if [ -n "$LAST_LOG" ]; then
+            NEW_LOGS=$(comm -13 <(echo "$LAST_LOG") <(echo "$LOGS"))
+          else
+            NEW_LOGS="$LOGS"
+          fi
 
           if [ -n "$NEW_LOGS" ]; then
             echo "$NEW_LOGS"
@@ -86,12 +90,12 @@ runs:
           fi
 
           if [ $NO_UPDATE_ELAPSED -gt 600 ]; then
-            echo "❌ Nenhuma nova linha no log em 10 minutos. Deploy travado."
+            echo "❌ No new lines in the log in 10 minutes. Deploy blocked."
             exit 1
           fi
 
           if echo "$LOGS" | grep -qE "Deploy finalizado!|Deploy sem docker finalizado!"; then
-            echo "✅ Deploy finalizado com sucesso!"
+            echo "✅ Deploy completed successfully!"
             exit 0
           fi
 
