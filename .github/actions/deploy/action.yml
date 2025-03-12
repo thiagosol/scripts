@@ -86,12 +86,16 @@ runs:
 
           LOGS=$(curl -u "$AUTH" -s "$LOG_URL")
 
-          if [ -n "$LAST_LOG" ]; then
-            NEW_LOGS=$(diff <(echo "$LAST_LOG") <(echo "$LOGS") | grep "^>" | cut -c3-)
-          else
-            NEW_LOGS="$LOGS"  # Exibe tudo na primeira iteração
+          if echo "$LOGS" | grep -qE "Deploy finalizado!|Deploy sem docker finalizado!"; then
+            echo "✅ Deploy completed successfully!"
+            exit 0
           fi
 
+          if [ -n "$LAST_LOG" ]; then
+            NEW_LOGS=$(diff <(echo "$LAST_LOG") <(echo "$LOGS") | grep "^>" | cut -c3- || true)
+          else
+            NEW_LOGS="$LOGS"
+          fi
 
           if [ -n "$NEW_LOGS" ]; then
             echo "$NEW_LOGS"
@@ -104,11 +108,7 @@ runs:
             exit 1
           fi
 
-          if echo "$LOGS" | grep -qE "Deploy finalizado!|Deploy sem docker finalizado!"; then
-            echo "✅ Deploy completed successfully!"
-            exit 0
-          fi
-
           sleep 10
         done
+
       shell: bash
