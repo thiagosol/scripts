@@ -25,7 +25,7 @@ runs:
     - name: Read secrets from JSON file
       id: secrets
       run: |
-        # Inicializa um array vazio no formato correto
+        # Inicializa um array JSON corretamente
         SECRETS_ARRAY="[]"
 
         for key in $(jq -r 'keys_unsorted[]' secrets.json); do
@@ -39,8 +39,11 @@ runs:
           SECRETS_ARRAY=$(echo "$SECRETS_ARRAY" | jq --arg entry "$key=$value" '. + [$entry]')
         done
 
-        # Salva o array no ambiente
-        echo "SECRETS_ENV_VARS=$SECRETS_ARRAY" >> $GITHUB_ENV
+        # Escapa o JSON antes de passar para o GitHub Actions
+        SECRETS_ENV_VARS=$(echo "$SECRETS_ARRAY" | jq -c .)
+
+        # Salva a variável corretamente sem quebrar a sintaxe do GitHub Actions
+        echo "SECRETS_ENV_VARS=$SECRETS_ENV_VARS" >> $GITHUB_ENV
       shell: bash
 
     - name: Debug environment variables before calling API
