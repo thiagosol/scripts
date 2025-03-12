@@ -1,71 +1,69 @@
-name: "Deploy Automático"
-description: "Executa o deploy chamando o serviço e monitorando os logs"
+name: "Auto Deploy"
+description: "Execution of the deploy by calling the service and monitoring the logs"
 inputs:
   GH_TOKEN:
-    description: "Token do GitHub para clonar repositório de secrets"
+    description: "GitHub token to clone secrets repository"
     required: true
   GH_USER:
-    description: "Usuário do GitHub owner do repositório"
+    description: "GitHub user owner of the repository"
     default: "thiagosol"
   DEPLOY_URL:
-    description: "URL do serviço de deploy"
+    description: "Deploy service URL"
     default: "http://deploy.thiagosol.com/deploy"
   LOG_URL:
-    description: "URL do log do deploy"
+    description: "Deploy logs URL"
     default: "https://deploy.thiagosol.com/logs"
 runs:
   using: "composite"
   steps:
-    - name: Clonar os secrets do repositório privado
+    - name: Clone secrets repository
       run: |
         git clone https://oauth2:${{ inputs.GH_TOKEN }}@github.com/thiagosol/secrets.git
         mv secrets/secrets.json secrets.json
       shell: bash
 
-    - name: Ler secrets do arquivo JSON
+    - name: Read secrets from JSON file
       id: secrets
       run: |
-        set +x 
+        echo "SECRETS_ENV_VARS=[]" >> $GITHUB_ENV
         for key in $(jq -r 'keys_unsorted[]' secrets.json); do
           value=$(jq -r --arg key "$key" '.[$key]' secrets.json)
-          echo "::set-output name=$key::$value"
+          echo "::add-mask::$value" 
+          echo "$key=$value" >> $GITHUB_ENV
+          echo "SECRETS_ENV_VARS+=(\"$key=$value\")" >> $GITHUB_ENV
         done
-        set -x 
       shell: bash
 
-    - name: Chamar o endpoint de deploy
+    - name: Call Deploy API
       run: |
-        set +x 
+        AUTH="${DEPLOY_USER}:${DEPLOY_PASS}"
+        echo "::add-mask::$AUTH"
+
+        JSON_ENV_VARS=$(printf '%s\n' "${SECRETS_ENV_VARS[@]}" | jq -R . | jq -s .)
+
         curl -X POST "${{ inputs.DEPLOY_URL }}" \
-          -u ${{ steps.secrets.outputs.DEPLOY_USER }}:${{ steps.secrets.outputs.DEPLOY_PASS }} \
+          -u "$AUTH" \
           -H "Content-Type: application/json" \
           -d '{
             "service": "${{ github.event.repository.name }}",
             "branch": "${{ inputs.GH_USER }}",
-            "env_vars": [
-              "LUMIMONEY_ADMIN_EMAIL=${{ steps.secrets.outputs.LUMIMONEY_ADMIN_EMAIL }}",
-              "LUMIMONEY_ADMIN_PASS=${{ steps.secrets.outputs.LUMIMONEY_ADMIN_PASS }}",
-              "DB_POSTGRES_USER=${{ steps.secrets.outputs.DB_POSTGRES_USER }}",
-              "DB_POSTGRES_PASS=${{ steps.secrets.outputs.DB_POSTGRES_PASS }}"
-            ]
+            "env_vars": '"$JSON_ENV_VARS"'
           }'
-        set -x 
       shell: bash
 
-    - name: Aguardar Conclusão do Deploy (Máx. 30 Minutos)
+    - name: Wait for Deploy Completion (Max. 30 Minutes)
       run: |
         LOG_URL="${{ inputs.LOG_URL }}/${{ github.event.repository.name }}"
-        set +x 
-        AUTH="${{ steps.secrets.outputs.DEPLOY_USER }}:${{ steps.secrets.outputs.DEPLOY_PASS }}"
-        set -x 
+        AUTH="${DEPLOY_USER}:${DEPLOY_PASS}"
+        echo "::add-mask::$AUTH" 
 
-        echo "🟡 Monitorando logs em: $LOG_URL"
-        echo "⏳ Aguardando até 30 minutos pelo deploy..."
+        echo "🟡 Monitoring logs in: $LOG_URL"
+        echo "⏳ Waiting up to 30 minutes for the deploy..."
 
         START_TIME=$(date +%s)
-        TIMEOUT=$((30 * 60))  # 30 minutos em segundos
+        TIMEOUT=$((30 * 60)) 
         LAST_LOG=""
-        LAST_UPDATE_TIME=$(date +%s)  # Marca o tempo da última atualização do log
+        LAST_UPDATE_TIME=$(date +%s) 
 
         while true; do
           CURRENT_TIME=$(date +%s)
@@ -79,27 +77,24 @@ runs:
 
           LOGS=$(curl -u "$AUTH" -s "$LOG_URL")
 
-          # Filtrar apenas novas linhas desde a última iteração
-          NEW_LOGS=$(echo "$LOGS" | grep -Fxv -f <(echo "$LAST_LOG"))
+          NEW_LOGS=$(diff --changed-group-format='%>' --unchanged-group-format='' <(echo "$LAST_LOG") <(echo "$LOGS"))
 
           if [ -n "$NEW_LOGS" ]; then
-            echo "$NEW_LOGS"  # Exibe apenas as linhas novas do log
-            LAST_LOG="$LOGS"  # Atualiza o log anterior para a próxima iteração
-            LAST_UPDATE_TIME=$(date +%s)  # Atualiza o tempo da última mudança
+            echo "$NEW_LOGS"
+            LAST_LOG="$LOGS"
+            LAST_UPDATE_TIME=$(date +%s) 
           fi
 
-          # Se não houver novas linhas por 10 minutos, falha
           if [ $NO_UPDATE_ELAPSED -gt 600 ]; then
             echo "❌ Nenhuma nova linha no log em 10 minutos. Deploy travado."
             exit 1
           fi
 
-          # Verifica se o deploy foi finalizado
           if echo "$LOGS" | grep -qE "Deploy finalizado!|Deploy sem docker finalizado!"; then
             echo "✅ Deploy finalizado com sucesso!"
             exit 0
           fi
-          
-          sleep 10  # Aguarda 10 segundos antes da próxima checagem
+
+          sleep 10
         done
       shell: bash
