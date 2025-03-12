@@ -34,6 +34,7 @@ runs:
         AUTH="${DEPLOY_USER}:${DEPLOY_PASS}"
         echo "::add-mask::$AUTH"
 
+        RUN_ID="${{ github.event.client_payload.run_id }}"
         SERVICE="${{ github.event.client_payload.service }}"
         STATUS="${{ github.event.client_payload.status }}"
         MESSAGE="${{ github.event.client_payload.message }}"
@@ -41,6 +42,7 @@ runs:
 
         echo "🚀 Deployment Result: $STATUS"
         echo "ℹ Message: $MESSAGE"
+        echo "🔗 Run ID: $RUN_ID"
 
         echo "🟡 Fetching logs from: $LOG_URL"
         LOGS=$(curl -u "$AUTH" -s "$LOG_URL")
