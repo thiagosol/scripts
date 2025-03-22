@@ -89,8 +89,13 @@ for VOL in $VOLUMES; do
     DEST="$BASE_DIR/$VOL"
 
     if [ -e "$SRC" ]; then
-        log "📁 Moving volume $SRC to $DEST..."
-        mv "$SRC" "$DEST" || log "ERROR: Failed to move $SRC, skipping..."
+        if [ -e "$DEST" ]; then
+            log "📁 Volume $DEST already exists, copying contents..."
+            cp -r "$SRC"/* "$DEST/" || log "⚠️ Error copying contents of $SRC, skipping..."
+        else
+            log "📁 Moving volume $SRC to $DEST..."
+            mv "$SRC" "$DEST" || log "⚠️ Error moving $SRC, skipping..."
+        fi
     else
         log "❌ Volume $SRC not found, skipping..."
     fi
