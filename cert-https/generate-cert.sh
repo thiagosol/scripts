@@ -57,12 +57,15 @@ expect <<EOF
     expect eof
 EOF
 
-if [ $? -ne 0 ]; then
-    log "❌ ERRO: Certbot falhou ao gerar o certificado."
-    log "🚀 Reiniciando o Traefik..."
-    docker-compose -f "$DIR_TRAEFIK/docker-compose.yml" up
-    exit 1
-fi
+# Aguarda o processo do expect terminar
+wait
+
+# Verifica se o certificado foi gerado
+log "⏳ Aguardando geração do certificado..."
+while [ ! -f "$DIR_CERTS/letsencrypt/live/$DOMINIO/fullchain.pem" ]; do
+    sleep 5
+    log "⏳ Aguardando geração do certificado..."
+done
 
 log "✅ Certificado gerado com sucesso!"
 
