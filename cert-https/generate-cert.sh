@@ -54,13 +54,22 @@ expect <<EOF
     expect "Please enter the domain name"
     send "$DOMINIO\n"
     
-    expect eof
+    expect {
+        "Successfully received certificate" {
+            log "✅ Certificado recebido com sucesso!"
+            exit 0
+        }
+        "Error" {
+            log "❌ Erro ao gerar certificado"
+            exit 1
+        }
+        timeout {
+            log "⚠️ Timeout ao aguardar geração do certificado"
+            exit 1
+        }
+    }
 EOF
 
-# Aguarda o processo do expect terminar
-wait
-
-# Verifica se o certificado foi gerado
 log "⏳ Aguardando geração do certificado..."
 while [ ! -f "$DIR_CERTS/letsencrypt/live/$DOMINIO/fullchain.pem" ]; do
     sleep 5
