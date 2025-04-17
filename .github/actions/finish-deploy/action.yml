@@ -6,7 +6,7 @@ inputs:
     required: true
   LOG_URL:
     description: "Deploy logs URL"
-    default: "https://deploy.thiagosol.com/logs"
+    default: "https://api-deploy.thiagosol.com/logs"
 runs:
   using: "composite"
   steps:
