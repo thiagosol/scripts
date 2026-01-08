@@ -5,6 +5,105 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
 }
 
+# ----------------------------
+# AutoDeploy config (.autodeploy.ini)
+# ----------------------------
+AUTODEPLOY_COMPOSE_FILE=""
+AUTODEPLOY_COPY_LIST=()
+AUTODEPLOY_RENDER_LIST=()
+
+trim() {
+  local s="$1"
+  s="${s#"${s%%[![:space:]]*}"}"   # ltrim
+  s="${s%"${s##*[![:space:]]}"}"   # rtrim
+  echo "$s"
+}
+
+read_autodeploy_ini() {
+  local cfg="$1"
+  [ -f "$cfg" ] || return 0
+
+  log "⚙️ Loading AutoDeploy config: $cfg"
+  local section=""
+
+  while IFS= read -r raw || [ -n "$raw" ]; do
+    # remove comments ; or #
+    local line="${raw%%#*}"
+    line="${line%%;*}"
+    line="$(trim "$line")"
+    [ -z "$line" ] && continue
+
+    if [[ "$line" =~ ^\[(.+)\]$ ]]; then
+      section="${BASH_REMATCH[1]}"
+      continue
+    fi
+
+    case "$section" in
+      settings)
+        if [[ "$line" == compose_file=* ]]; then
+          AUTODEPLOY_COMPOSE_FILE="${line#compose_file=}"
+          AUTODEPLOY_COMPOSE_FILE="$(trim "$AUTODEPLOY_COMPOSE_FILE")"
+        fi
+        ;;
+      copy)
+        AUTODEPLOY_COPY_LIST+=("$line")
+        ;;
+      render)
+        AUTODEPLOY_RENDER_LIST+=("$line")
+        ;;
+      *)
+        # ignore unknown sections
+        ;;
+    esac
+  done < "$cfg"
+}
+
+copy_extra_paths() {
+  local src_root="$1"
+  local dst_root="$2"
+
+  [ "${#AUTODEPLOY_COPY_LIST[@]}" -eq 0 ] && return 0
+  log "📦 Copying extra paths (from [copy]) to base dir..."
+
+  for rel in "${AUTODEPLOY_COPY_LIST[@]}"; do
+    local src="$src_root/$rel"
+    local dst="$dst_root/$rel"
+
+    if [ -e "$src" ]; then
+      mkdir -p "$(dirname "$dst")"
+      # cp -a preserva estrutura/perms
+      cp -a "$src" "$dst" 2>/dev/null || cp -a "$src" "$(dirname "$dst")/"
+      log "✅ Copied: $rel"
+    else
+      log "⚠️ Not found to copy: $rel"
+    fi
+  done
+}
+
+render_files_list() {
+  local base_dir="$1"
+  [ "${#AUTODEPLOY_RENDER_LIST[@]}" -eq 0 ] && return 0
+
+  log "🧩 Rendering placeholders in files from [render]..."
+
+  for rel in "${AUTODEPLOY_RENDER_LIST[@]}"; do
+    local f="$base_dir/$rel"
+    if [ ! -f "$f" ]; then
+      log "⚠️ Render target not found (skipping): $rel"
+      continue
+    fi
+
+    if ! grep -Iq . "$f"; then
+      log "⚠️ Non-text file (skipping): $rel"
+      continue
+    fi
+
+    # Replace ${VAR} only if VAR exists in ENV; else keep ${VAR}
+    perl -i -pe 's/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/exists $ENV{$1} ? $ENV{$1} : $&/ge' "$f"
+    log "✅ Rendered: $rel"
+  done
+}
+
 # Function to send webhook to GitHub Actions (only if GH_TOKEN is available)
 notify_github() {
     if [ -n "$GH_TOKEN" ]; then
@@ -24,7 +123,7 @@ notify_github() {
 SERVICE=$1
 GIT_USER=${2:-thiagosol}
 BRANCH="main"
-BASE_DIR="/opt/auto-deploy/$SERVICE"
+BASE_DIR="/opt/auto-deploy/$SERVICE"    
 TEMP_DIR="$BASE_DIR/temp"
 GIT_REPO="https://github.com/$GIT_USER/$SERVICE.git"
 
@@ -39,11 +138,19 @@ for VAR in "$@"; do
     fi
 done
 
+if [ -d "$TEMP_DIR" ]; then
+  sudo chown -R "$(whoami)":"$(whoami)" "$TEMP_DIR"
+  rm -rf "$TEMP_DIR"
+fi
+
 mkdir -p "$TEMP_DIR"
+
 cd "$TEMP_DIR" || { log "ERROR: Failed to access temp directory"; notify_github "failure" "Failed to access temp directory"; exit 1; }
 
 log "📥 Cloning repository $GIT_REPO (branch: $BRANCH)..."
 git clone --depth=1 --branch "$BRANCH" "$GIT_REPO" . || { log "ERROR: Git clone failed"; notify_github "failure" "Git clone failed"; exit 1; }
+
+read_autodeploy_ini "$TEMP_DIR/.autodeploy.ini"
 
 # Check if Dockerfile or docker-compose.yml exists
 if [ ! -f "$TEMP_DIR/Dockerfile" ] && [ -z "$(find "$TEMP_DIR" -maxdepth 1 -type f -name 'docker-compose*.yml' -print -quit)" ]; then
@@ -67,19 +174,36 @@ fi
 
 if [ -f "$TEMP_DIR/Dockerfile" ]; then
     log "🔨 Building new Docker image..."
-    DOCKER_BUILD_CMD="docker build --memory=4g --rm --force-rm -t $SERVICE $TEMP_DIR"
+    DOCKER_BUILD_CMD="docker build --memory=6g --rm --force-rm -t $SERVICE"
 
     for VAR in "$@"; do
         DOCKER_BUILD_CMD+=" --build-arg $VAR"
     done
+
+    DOCKER_BUILD_CMD+=" $TEMP_DIR"
 
     eval "$DOCKER_BUILD_CMD" || { log "ERROR: Docker build failed"; notify_github "failure" "Docker build failed"; exit 1; }
 else
     log "⚠️ No Dockerfile found. Skipping build step."
 fi
 
-log "📂 Moving docker-compose.yml to $BASE_DIR..."
-mv "$TEMP_DIR/docker-compose.yml" "$BASE_DIR/" || { log "ERROR: Failed to move docker-compose.yml"; notify_github "failure" "Failed to move docker-compose.yml"; exit 1; }
+
+# Choose compose file
+if [ -n "$AUTODEPLOY_COMPOSE_FILE" ]; then
+  COMPOSE_SRC="$TEMP_DIR/$AUTODEPLOY_COMPOSE_FILE"
+else
+  COMPOSE_SRC="$(find "$TEMP_DIR" -maxdepth 1 -type f -name 'docker-compose*.yml' | head -n 1)"
+fi
+
+if [ -z "$COMPOSE_SRC" ] || [ ! -f "$COMPOSE_SRC" ]; then
+  log "ERROR: No docker-compose file found"
+  notify_github "failure" "No docker-compose file found"
+  exit 1
+fi
+
+COMPOSE_BASENAME="$(basename "$COMPOSE_SRC")"
+log "📂 Moving $COMPOSE_BASENAME to $BASE_DIR..."
+mv "$COMPOSE_SRC" "$BASE_DIR/$COMPOSE_BASENAME" || { log "ERROR: Failed to move compose"; notify_github "failure" "Failed to move compose"; exit 1; }
 
 log "🛠️ Checking volumes..."
 VOLUMES=$(grep -oP '(?<=- \./)[^:]+' "$BASE_DIR/docker-compose.yml")
@@ -107,6 +231,12 @@ for VOL in $VOLUMES; do
     fi
 done
 
+# Copy extra configured paths (not bound to compose volumes)
+copy_extra_paths "$TEMP_DIR" "$BASE_DIR"
+
+# Now render only the configured files in base dir
+render_files_list "$BASE_DIR"
+
 log "🛠️ Cleaning temporary directories and unused images..."
 rm -rf "$TEMP_DIR"
 docker images -f "dangling=true" -q | xargs -r docker rmi -f
@@ -114,7 +244,8 @@ docker images -f "dangling=true" -q | xargs -r docker rmi -f
 cd "$BASE_DIR" || { log "ERROR: Failed to access base directory"; notify_github "failure" "Failed to access base directory"; exit 1; }
 
 log "🔄 Restarting containers with Docker Compose..."
-docker-compose down && docker-compose up -d || { log "ERROR: Docker Compose failed"; notify_github "failure" "Docker Compose failed"; exit 1; }
+docker-compose -f "$COMPOSE_BASENAME" down && docker-compose -f "$COMPOSE_BASENAME" up -d \
+  || { log "ERROR: Docker Compose failed"; notify_github "failure" "Docker Compose failed"; exit 1; }
 
 log "✅ Deployment completed successfully!"
 notify_github "success" "Deployment completed successfully"
