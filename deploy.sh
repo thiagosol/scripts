@@ -148,7 +148,7 @@ mkdir -p "$TEMP_DIR"
 cd "$TEMP_DIR" || { log "ERROR: Failed to access temp directory"; notify_github "failure" "Failed to access temp directory"; exit 1; }
 
 log "📥 Cloning repository $GIT_REPO (branch: $BRANCH)..."
-git clone --depth=1 --branch "$BRANCH" "$GIT_REPO" . || { log "ERROR: Git clone failed"; notify_github "failure" "Git clone failed"; exit 1; }
+git -c http.extraheader="AUTHORIZATION: bearer $GH_TOKEN" clone --depth=1 --branch "$BRANCH" "$GIT_REPO" . || { log "ERROR: Git clone failed"; notify_github "failure" "Git clone failed"; exit 1; }
 
 read_autodeploy_ini "$TEMP_DIR/.autodeploy.ini"
 
