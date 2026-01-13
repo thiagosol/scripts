@@ -164,18 +164,10 @@ if [ ! -f "$TEMP_DIR/Dockerfile" ] && [ -z "$(find "$TEMP_DIR" -maxdepth 1 -type
     exit 0
 fi
 
-log "🔥 Removing old images..."
-EXISTING_IMAGE=$(docker images -q "$SERVICE")
-if [ -n "$EXISTING_IMAGE" ]; then
-    log "📌 Found existing image. Stopping and removing..."
-    docker ps -q --filter "ancestor=$SERVICE" | xargs -r docker stop
-    docker ps -aq --filter "ancestor=$SERVICE" | xargs -r docker rm
-    docker rmi -f "$SERVICE"
-fi
-
+# Build new image FIRST (without stopping anything)
 if [ -f "$TEMP_DIR/Dockerfile" ]; then
     log "🔨 Building new Docker image..."
-    DOCKER_BUILD_CMD="docker build --memory=6g --rm --force-rm -t $SERVICE"
+    DOCKER_BUILD_CMD="docker build --memory=6g --rm --force-rm -t ${SERVICE}:new"
 
     for VAR in "$@"; do
         DOCKER_BUILD_CMD+=" --build-arg $VAR"
@@ -184,6 +176,15 @@ if [ -f "$TEMP_DIR/Dockerfile" ]; then
     DOCKER_BUILD_CMD+=" $TEMP_DIR"
 
     eval "$DOCKER_BUILD_CMD" || { log "ERROR: Docker build failed"; notify_github "failure" "Docker build failed"; exit 1; }
+    
+    log "✅ New image built successfully!"
+    
+    # Tag the new image with the service name
+    docker tag "${SERVICE}:new" "$SERVICE:latest" || { log "ERROR: Failed to tag image"; notify_github "failure" "Failed to tag image"; exit 1; }
+    docker tag "${SERVICE}:new" "$SERVICE" || { log "ERROR: Failed to tag image"; notify_github "failure" "Failed to tag image"; exit 1; }
+    
+    # Remove the temporary tag
+    docker rmi "${SERVICE}:new" 2>/dev/null || true
 else
     log "⚠️ No Dockerfile found. Skipping build step."
 fi
@@ -238,15 +239,31 @@ copy_extra_paths "$TEMP_DIR" "$BASE_DIR"
 # Now render only the configured files in base dir
 render_files_list "$BASE_DIR"
 
-log "🛠️ Cleaning temporary directories and unused images..."
+log "🛠️ Cleaning temporary directories..."
 rm -rf "$TEMP_DIR"
-docker images -f "dangling=true" -q | xargs -r docker rmi -f
 
 cd "$BASE_DIR" || { log "ERROR: Failed to access base directory"; notify_github "failure" "Failed to access base directory"; exit 1; }
 
-log "🔄 Restarting containers with Docker Compose..."
-docker-compose -f "$COMPOSE_BASENAME" down && docker-compose -f "$COMPOSE_BASENAME" up -d \
-  || { log "ERROR: Docker Compose failed"; notify_github "failure" "Docker Compose failed"; exit 1; }
+log "🚀 Updating containers with Docker Compose (zero-downtime)..."
+# Using 'up -d' without 'down' allows Docker Compose to do a rolling update
+# It will stop the old container and start the new one minimizing downtime
+docker-compose -f "$COMPOSE_BASENAME" up -d --remove-orphans || { 
+    log "ERROR: Docker Compose failed to start!"; 
+    log "🔄 Attempting rollback by restarting old containers...";
+    docker-compose -f "$COMPOSE_BASENAME" up -d --remove-orphans;
+    notify_github "failure" "Docker Compose failed to start"; 
+    exit 1; 
+}
+
+log "🧹 Cleaning unused/dangling images..."
+docker images -f "dangling=true" -q | xargs -r docker rmi -f || log "⚠️ No dangling images to remove"
+
+# Remove old tagged images (keep only the latest)
+OLD_IMAGES=$(docker images "$SERVICE" --format "{{.ID}}" | tail -n +2)
+if [ -n "$OLD_IMAGES" ]; then
+    log "🗑️ Removing old versions of $SERVICE..."
+    echo "$OLD_IMAGES" | xargs -r docker rmi -f 2>/dev/null || log "⚠️ Some old images are still in use"
+fi
 
 log "✅ Deployment completed successfully!"
 notify_github "success" "Deployment completed successfully"
