@@ -5,6 +5,17 @@ log() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1"
 }
 
+# Function to clean up lock file on exit
+cleanup_lock() {
+    if [ -n "$LOCK_FILE" ] && [ -f "$LOCK_FILE" ]; then
+        log "🔓 Removing deployment lock..."
+        rm -f "$LOCK_FILE"
+    fi
+}
+
+# Set trap to always clean up lock on exit (success, error, or interrupt)
+trap cleanup_lock EXIT INT TERM
+
 # ----------------------------
 # AutoDeploy config (.autodeploy.ini)
 # ----------------------------
@@ -125,7 +136,46 @@ GIT_USER=${2:-thiagosol}
 BRANCH="main"
 BASE_DIR="/opt/auto-deploy/$SERVICE"    
 TEMP_DIR="$BASE_DIR/temp"
+LOCK_FILE="$BASE_DIR/.deploy.lock"
 GIT_REPO="git@github.com:$GIT_USER/$SERVICE.git"
+
+# Check if service name was provided
+if [ -z "$SERVICE" ]; then
+    log "❌ ERROR: Service name is required!"
+    log "Usage: $0 <service-name> [git-user] [VAR=value...]"
+    exit 1
+fi
+
+# Create base directory if it doesn't exist
+mkdir -p "$BASE_DIR"
+
+# Check for existing lock (another deploy in progress)
+if [ -f "$LOCK_FILE" ]; then
+    LOCK_PID=$(cat "$LOCK_FILE" 2>/dev/null)
+    LOCK_TIME=$(stat -c %Y "$LOCK_FILE" 2>/dev/null || stat -f %m "$LOCK_FILE" 2>/dev/null)
+    CURRENT_TIME=$(date +%s)
+    LOCK_AGE=$((CURRENT_TIME - LOCK_TIME))
+    
+    # Check if the process is still running
+    if [ -n "$LOCK_PID" ] && kill -0 "$LOCK_PID" 2>/dev/null; then
+        log "🔒 DEPLOY BLOCKED: Another deployment for '$SERVICE' is already in progress (PID: $LOCK_PID)"
+        log "⏳ Please wait for the current deployment to finish."
+        exit 2
+    elif [ $LOCK_AGE -lt 3600 ]; then
+        # Lock exists but process is dead, and lock is less than 1 hour old
+        log "⚠️ Found stale lock file from $(date -d @$LOCK_TIME 2>/dev/null || date -r $LOCK_TIME 2>/dev/null)"
+        log "🔓 Removing stale lock and proceeding..."
+        rm -f "$LOCK_FILE"
+    else
+        # Lock is very old (> 1 hour), definitely stale
+        log "⚠️ Found very old lock file, removing..."
+        rm -f "$LOCK_FILE"
+    fi
+fi
+
+# Create lock file with current PID
+echo $$ > "$LOCK_FILE"
+log "🔒 Deployment lock acquired for '$SERVICE' (PID: $$)"
 
 shift 2
 
@@ -179,11 +229,19 @@ if [ -f "$TEMP_DIR/Dockerfile" ]; then
     
     log "✅ New image built successfully!"
     
+    # Backup the old image before replacing it
+    EXISTING_IMAGE=$(docker images -q "$SERVICE:latest" 2>/dev/null)
+    if [ -n "$EXISTING_IMAGE" ]; then
+        log "💾 Creating backup of current image..."
+        docker tag "$SERVICE:latest" "${SERVICE}:backup" 2>/dev/null || true
+        docker tag "$SERVICE" "${SERVICE}:old" 2>/dev/null || true
+    fi
+    
     # Tag the new image with the service name
     docker tag "${SERVICE}:new" "$SERVICE:latest" || { log "ERROR: Failed to tag image"; notify_github "failure" "Failed to tag image"; exit 1; }
     docker tag "${SERVICE}:new" "$SERVICE" || { log "ERROR: Failed to tag image"; notify_github "failure" "Failed to tag image"; exit 1; }
     
-    # Remove the temporary tag
+    # Remove the temporary 'new' tag
     docker rmi "${SERVICE}:new" 2>/dev/null || true
 else
     log "⚠️ No Dockerfile found. Skipping build step."
@@ -247,19 +305,49 @@ cd "$BASE_DIR" || { log "ERROR: Failed to access base directory"; notify_github 
 log "🚀 Updating containers with Docker Compose (zero-downtime)..."
 # Using 'up -d' without 'down' allows Docker Compose to do a rolling update
 # It will stop the old container and start the new one minimizing downtime
-docker-compose -f "$COMPOSE_BASENAME" up -d --remove-orphans || { 
-    log "ERROR: Docker Compose failed to start!"; 
-    log "🔄 Attempting rollback by restarting old containers...";
-    docker-compose -f "$COMPOSE_BASENAME" up -d --remove-orphans;
-    notify_github "failure" "Docker Compose failed to start"; 
-    exit 1; 
-}
+if ! docker-compose -f "$COMPOSE_BASENAME" up -d --remove-orphans; then
+    log "❌ ERROR: Docker Compose failed to start with new image!"
+    
+    # Check if we have a backup to rollback
+    BACKUP_IMAGE=$(docker images -q "${SERVICE}:backup" 2>/dev/null)
+    if [ -n "$BACKUP_IMAGE" ]; then
+        log "🔄 Attempting ROLLBACK to previous working image..."
+        
+        # Restore the backup image
+        docker tag "${SERVICE}:backup" "$SERVICE:latest"
+        docker tag "${SERVICE}:backup" "$SERVICE"
+        
+        # Try to start with the old image
+        if docker-compose -f "$COMPOSE_BASENAME" up -d --remove-orphans; then
+            log "✅ Rollback successful! Service restored to previous version."
+            # Clean the failed 'new' image
+            docker images "${SERVICE}" --format "{{.ID}}" | head -n 1 | xargs -r docker rmi -f 2>/dev/null || true
+        else
+            log "❌ CRITICAL: Rollback also failed!"
+        fi
+    else
+        log "⚠️ No backup image found. Cannot rollback."
+    fi
+    
+    notify_github "failure" "Docker Compose failed to start - rollback attempted"
+    exit 1
+fi
+
+log "✅ Containers updated successfully!"
 
 log "🧹 Cleaning unused/dangling images..."
 docker images -f "dangling=true" -q | xargs -r docker rmi -f || log "⚠️ No dangling images to remove"
 
-# Remove old tagged images (keep only the latest)
-OLD_IMAGES=$(docker images "$SERVICE" --format "{{.ID}}" | tail -n +2)
+# Remove backup images now that deployment was successful
+BACKUP_IMAGE=$(docker images -q "${SERVICE}:backup" 2>/dev/null)
+if [ -n "$BACKUP_IMAGE" ]; then
+    log "🗑️ Removing backup image (deploy successful)..."
+    docker rmi "${SERVICE}:backup" 2>/dev/null || log "⚠️ Could not remove backup image"
+    docker rmi "${SERVICE}:old" 2>/dev/null || true
+fi
+
+# Remove old untagged images
+OLD_IMAGES=$(docker images "$SERVICE" --filter "dangling=false" --format "{{.ID}} {{.Tag}}" | grep -v "latest" | grep -v "backup" | awk '{print $1}' | head -n 5)
 if [ -n "$OLD_IMAGES" ]; then
     log "🗑️ Removing old versions of $SERVICE..."
     echo "$OLD_IMAGES" | xargs -r docker rmi -f 2>/dev/null || log "⚠️ Some old images are still in use"
