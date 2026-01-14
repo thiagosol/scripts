@@ -12,11 +12,9 @@ generate_grafana_url() {
     local branch="$3"
     local git_user="$4"
     
-    # URL-encode the LogQL query
-    local query="{service=\"${service}\",type=\"deploy\",environment=\"${environment}\",branch=\"${branch}\",git_user=\"${git_user}\"}"
-    
-    # Grafana explore URL with dynamic labels
-    echo "https://log.thiagosol.com/explore?orgId=1&left=%7B%22datasource%22%3A%22a0d36381-92c9-4a2b-ba29-d9bbb0090398%22%2C%22queries%22%3A%5B%7B%22expr%22%3A%22${query}%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D"
+    # Simple Grafana URL without complex encoding
+    # User can filter by labels manually in Grafana UI
+    echo "https://log.thiagosol.com/explore"
 }
 
 # Create GitHub Check Run at deploy start
@@ -47,21 +45,16 @@ create_github_check() {
     log "   User: $git_user"
     log "   Token: ${APP_ID_TOKEN:0:7}... (${#APP_ID_TOKEN} chars)"
     
+    # Build JSON payload in single line to avoid parsing issues
+    local summary="Service: ${service} | Branch: ${branch} | Environment: ${environment} | User: ${git_user}\\n\\nBuilding Docker image and deploying containers..."
+    local json_payload="{\"name\":\"Container Deployment\",\"head_sha\":\"${head_sha}\",\"status\":\"in_progress\",\"details_url\":\"${grafana_url}\",\"output\":{\"title\":\"Deploying ${service} to ${environment}\",\"summary\":\"${summary}\"}}"
+    
     # Create check run
     local http_code=$(curl -s -w "\n%{http_code}" -X POST "https://api.github.com/repos/thiagosol/${service}/check-runs" \
         -H "Authorization: token ${APP_ID_TOKEN}" \
         -H "Content-Type: application/json" \
         -H "Accept: application/vnd.github+json" \
-        -d "{
-            \"name\": \"🚀 Container Deployment\",
-            \"head_sha\": \"${head_sha}\",
-            \"status\": \"in_progress\",
-            \"details_url\": \"${grafana_url}\",
-            \"output\": {
-                \"title\": \"Deploying ${service} to ${environment}\",
-                \"summary\": \"**Service:** \`${service}\`\\n**Branch:** \`${branch}\`\\n**Environment:** \`${environment}\`\\n**User:** \`${git_user}\`\\n\\n🔄 Building Docker image and deploying containers...\\n\\n📊 [View live logs in Grafana](${grafana_url})\"
-            }
-        }" 2>&1)
+        -d "${json_payload}" 2>&1)
     
     # Split response and HTTP code
     local response=$(echo "$http_code" | head -n -1)
@@ -115,20 +108,16 @@ complete_github_check_success() {
     # Generate Grafana URL
     local grafana_url=$(generate_grafana_url "$service" "$environment" "$branch" "$git_user")
     
+    # Build JSON payload in single line
+    local summary="Service: ${service} | Branch: ${branch} | Environment: ${environment} | User: ${git_user} | Duration: ${deploy_duration}\\n\\nDocker image built successfully\\nContainers updated with zero-downtime\\nHealth checks passed"
+    local json_payload="{\"status\":\"completed\",\"conclusion\":\"success\",\"details_url\":\"${grafana_url}\",\"output\":{\"title\":\"Deployment successful: ${service}/${branch}\",\"summary\":\"${summary}\"}}"
+    
     # Update check run with success
     local http_code=$(curl -s -w "\n%{http_code}" -X PATCH "https://api.github.com/repos/thiagosol/${service}/check-runs/${GITHUB_CHECK_RUN_ID}" \
         -H "Authorization: token ${APP_ID_TOKEN}" \
         -H "Content-Type: application/json" \
         -H "Accept: application/vnd.github+json" \
-        -d "{
-            \"status\": \"completed\",
-            \"conclusion\": \"success\",
-            \"details_url\": \"${grafana_url}\",
-            \"output\": {
-                \"title\": \"✅ Deployment successful: ${service}/${branch}\",
-                \"summary\": \"**Service:** \`${service}\`\\n**Branch:** \`${branch}\`\\n**Environment:** \`${environment}\`\\n**User:** \`${git_user}\`\\n**Duration:** ${deploy_duration}\\n\\n✅ Docker image built successfully\\n✅ Containers updated with zero-downtime\\n✅ Health checks passed\\n\\n📊 [View deployment logs in Grafana](${grafana_url})\"
-            }
-        }" 2>&1)
+        -d "${json_payload}" 2>&1)
     
     local code=$(echo "$http_code" | tail -n 1)
     
@@ -155,20 +144,16 @@ complete_github_check_failure() {
     # Generate Grafana URL
     local grafana_url=$(generate_grafana_url "$service" "$environment" "$branch" "$git_user")
     
+    # Build JSON payload in single line
+    local summary="Service: ${service} | Branch: ${branch} | Environment: ${environment} | User: ${git_user}\\n\\nError: ${error_message}\\n\\nThe deployment has been rolled back to the previous version (if available)."
+    local json_payload="{\"status\":\"completed\",\"conclusion\":\"failure\",\"details_url\":\"${grafana_url}\",\"output\":{\"title\":\"Deployment failed: ${service}/${branch}\",\"summary\":\"${summary}\"}}"
+    
     # Update check run with failure
     local http_code=$(curl -s -w "\n%{http_code}" -X PATCH "https://api.github.com/repos/thiagosol/${service}/check-runs/${GITHUB_CHECK_RUN_ID}" \
         -H "Authorization: token ${APP_ID_TOKEN}" \
         -H "Content-Type: application/json" \
         -H "Accept: application/vnd.github+json" \
-        -d "{
-            \"status\": \"completed\",
-            \"conclusion\": \"failure\",
-            \"details_url\": \"${grafana_url}\",
-            \"output\": {
-                \"title\": \"❌ Deployment failed: ${service}/${branch}\",
-                \"summary\": \"**Service:** \`${service}\`\\n**Branch:** \`${branch}\`\\n**Environment:** \`${environment}\`\\n**User:** \`${git_user}\`\\n\\n❌ **Error:** ${error_message}\\n\\nThe deployment has been rolled back to the previous version (if available).\\n\\n📊 [View error logs in Grafana](${grafana_url})\\n\\n**Troubleshooting:**\\n- Check Docker build logs\\n- Verify environment variables\\n- Review docker-compose configuration\"
-            }
-        }" 2>&1)
+        -d "${json_payload}" 2>&1)
     
     local code=$(echo "$http_code" | tail -n 1)
     
