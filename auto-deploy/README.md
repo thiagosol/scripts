@@ -33,7 +33,7 @@ auto-deploy/
 
 1. **service-name**: Nome do serviço a ser deployado
 
-### Parâmetros Opcionais (key=value)
+### Parâmetros Opcionais (key=value, **ordem não importa!** 🔀)
 
 - **GIT_USER=<user>**: Usuário/organização do GitHub (default: `thiagosol`)
 - **BRANCH=<branch>**: Branch Git para deploy (default: `main`)
@@ -42,6 +42,8 @@ auto-deploy/
     - `main` ou `master` → `prod`
     - `dev`, `develop`, `development` → `dev`
     - `staging`, `stage` → `staging`
+
+> 💡 **Dica**: Você pode passar os parâmetros opcionais em **qualquer ordem**! O parser identifica automaticamente cada `KEY=VALUE`.
 
 ### Exemplos
 
@@ -58,8 +60,10 @@ auto-deploy/
 # Deploy com override de ambiente
 ./deploy.sh my-service BRANCH=dev ENVIRONMENT=staging
 
-# Deploy completo com todas as opções
-./deploy.sh my-service GIT_USER=thiagosol BRANCH=main ENVIRONMENT=prod
+# Deploy completo com todas as opções (ordem não importa!)
+./deploy.sh my-service BRANCH=dev ENVIRONMENT=staging GIT_USER=thiagosol
+./deploy.sh my-service ENVIRONMENT=prod BRANCH=main
+./deploy.sh my-service GIT_USER=otheruser
 ```
 
 ## ✨ Funcionalidades
