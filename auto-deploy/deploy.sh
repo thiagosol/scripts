@@ -170,6 +170,9 @@ main() {
     log "🛠️ Cleaning temporary directories..."
     rm -rf "$TEMP_DIR"
     
+    # Set executable permissions for all .sh files
+    set_executable_permissions "$BASE_DIR"
+    
     # Deploy with Docker Compose (zero-downtime)
     if ! deploy_with_compose "$SERVICE" "$BASE_DIR" "$COMPOSE_BASENAME"; then
         # Rollback on failure (only if Docker image was built)
