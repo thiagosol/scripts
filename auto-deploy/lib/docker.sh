@@ -13,7 +13,13 @@ build_docker_image() {
     fi
     
     log "🔨 Building new Docker image..."
-    local docker_build_cmd="docker build --memory=6g --rm --force-rm -t ${service}:new"
+    
+    # Enable BuildKit for better performance and caching
+    export DOCKER_BUILDKIT=1
+    
+    local docker_build_cmd="docker build --memory=6g --rm --force-rm"
+    docker_build_cmd+=" --cache-from ${service}:latest"
+    docker_build_cmd+=" -t ${service}:new"
     
     # Add build arguments from environment variables
     log "📦 Adding build arguments from secrets..."

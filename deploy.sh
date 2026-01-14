@@ -339,7 +339,12 @@ fi
 # Build new image FIRST (without stopping anything)
 if [ -f "$TEMP_DIR/Dockerfile" ]; then
     log "🔨 Building new Docker image..."
-    DOCKER_BUILD_CMD="docker build --memory=6g --rm --force-rm -t ${SERVICE}:new"
+    
+    export DOCKER_BUILDKIT=1
+    
+    DOCKER_BUILD_CMD="docker build --memory=6g --rm --force-rm"
+    DOCKER_BUILD_CMD+=" --cache-from ${SERVICE}:latest"
+    DOCKER_BUILD_CMD+=" -t ${SERVICE}:new"
 
     # Pass all exported environment variables as build args
     log "📦 Adding build arguments from secrets..."
