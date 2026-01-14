@@ -12,9 +12,12 @@ generate_grafana_url() {
     local branch="$3"
     local git_user="$4"
     
-    # Simple Grafana URL without complex encoding
-    # User can filter by labels manually in Grafana UI
-    echo "https://log.thiagosol.com/explore"
+    # Build LogQL expression with dynamic labels
+    # Format: {service="xxx",type="deploy",environment="yyy",branch="zzz"}
+    local expr="%7Bservice%3D%5C%22${service}%5C%22%2Ctype%3D%5C%22deploy%5C%22%2Cenvironment%3D%5C%22${environment}%5C%22%2Cbranch%3D%5C%22${branch}%5C%22%7D"
+    
+    # Build full Grafana explore URL
+    echo "https://log.thiagosol.com/explore?orgId=1&left=%7B%22datasource%22%3A%22a0d36381-92c9-4a2b-ba29-d9bbb0090398%22%2C%22queries%22%3A%5B%7B%22expr%22%3A%22${expr}%22%7D%5D%2C%22range%22%3A%7B%22from%22%3A%22now-1h%22%2C%22to%22%3A%22now%22%7D%7D"
 }
 
 # Create GitHub Check Run at deploy start
@@ -36,15 +39,6 @@ create_github_check() {
     # Generate Grafana URL
     local grafana_url=$(generate_grafana_url "$service" "$environment" "$branch" "$git_user")
     
-    # Debug info
-    log "🔍 GitHub Check Run parameters:"
-    log "   Service: $service"
-    log "   HEAD SHA: $head_sha"
-    log "   Environment: $environment"
-    log "   Branch: $branch"
-    log "   User: $git_user"
-    log "   Token: ${APP_ID_TOKEN:0:7}... (${#APP_ID_TOKEN} chars)"
-    
     # Build JSON payload in single line to avoid parsing issues
     local summary="Service: ${service} | Branch: ${branch} | Environment: ${environment} | User: ${git_user}\\n\\nBuilding Docker image and deploying containers..."
     local json_payload="{\"name\":\"Container Deployment\",\"head_sha\":\"${head_sha}\",\"status\":\"in_progress\",\"details_url\":\"${grafana_url}\",\"output\":{\"title\":\"Deploying ${service} to ${environment}\",\"summary\":\"${summary}\"}}"
@@ -60,9 +54,6 @@ create_github_check() {
     local response=$(echo "$http_code" | head -n -1)
     local code=$(echo "$http_code" | tail -n 1)
     
-    log "🌐 GitHub API Response:"
-    log "   HTTP Code: $code"
-    
     # Extract check run ID from response (root level "id" field)
     if command -v jq &> /dev/null; then
         # Use jq if available (more reliable)
@@ -76,27 +67,7 @@ create_github_check() {
         log "✅ GitHub Check Run created (ID: $GITHUB_CHECK_RUN_ID)"
         return 0
     else
-        log "❌ Failed to create GitHub Check Run (non-critical)"
-        log "   HTTP Code: $code"
-        log "   Extracted ID: ${GITHUB_CHECK_RUN_ID:-empty}"
-        
-        # Show first 500 chars of response for debugging
-        log "   Response preview:"
-        echo "$response" | head -c 500 | while IFS= read -r line; do
-            log "     $line"
-        done
-        
-        # Parse common errors
-        if echo "$response" | grep -q "Bad credentials"; then
-            log "   ❌ Error: Invalid or expired GitHub token"
-        elif echo "$response" | grep -q "Not Found"; then
-            log "   ❌ Error: Repository not found or no access"
-        elif echo "$response" | grep -q "Resource not accessible"; then
-            log "   ❌ Error: Token lacks 'checks:write' permission"
-        elif echo "$response" | grep -q "No commit found"; then
-            log "   ❌ Error: Commit SHA not found in repository"
-        fi
-        
+        log "⚠️ Failed to create GitHub Check Run (non-critical, HTTP $code)"
         return 1
     fi
 }
@@ -111,8 +82,6 @@ complete_github_check_success() {
     
     [ -z "$GITHUB_CHECK_RUN_ID" ] && return 0
     [ -z "$APP_ID_TOKEN" ] && return 0
-    
-    log "✅ Updating GitHub Check Run (success)..."
     
     # Generate Grafana URL
     local grafana_url=$(generate_grafana_url "$service" "$environment" "$branch" "$git_user")
@@ -147,8 +116,6 @@ complete_github_check_failure() {
     
     [ -z "$GITHUB_CHECK_RUN_ID" ] && return 0
     [ -z "$APP_ID_TOKEN" ] && return 0
-    
-    log "❌ Updating GitHub Check Run (failure)..."
     
     # Generate Grafana URL
     local grafana_url=$(generate_grafana_url "$service" "$environment" "$branch" "$git_user")
