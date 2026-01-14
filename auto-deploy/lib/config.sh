@@ -38,6 +38,17 @@ parse_arguments() {
         BRANCH="${DEPLOY_OPTIONS[BRANCH]}"
     fi
     
+    # GitHub Check Runs parameters (optional)
+    if [ -n "${DEPLOY_OPTIONS[APP_ID_TOKEN]}" ]; then
+        APP_ID_TOKEN="${DEPLOY_OPTIONS[APP_ID_TOKEN]}"
+        export APP_ID_TOKEN
+    fi
+    
+    if [ -n "${DEPLOY_OPTIONS[COMMIT_AFTER]}" ]; then
+        HEAD_SHA="${DEPLOY_OPTIONS[COMMIT_AFTER]}"
+        export HEAD_SHA
+    fi
+    
     # Validate required parameters
     if [ -z "$SERVICE" ]; then
         log "❌ ERROR: Missing required parameter!"
@@ -54,6 +65,8 @@ parse_arguments() {
         log "                         main/master → prod"
         log "                         dev/develop → dev"
         log "                         staging     → staging"
+        log "  APP_ID_TOKEN=<token> GitHub token for Check Runs API (optional)"
+        log "  COMMIT_AFTER=<sha>       Git commit SHA for Check Runs (optional)"
         log ""
         log "Examples:"
         log "  $0 my-service"

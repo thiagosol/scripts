@@ -190,17 +190,20 @@ send_new_logs_to_loki() {
             local log_timestamp="${BASH_REMATCH[1]}"
             local log_message="${BASH_REMATCH[2]}"
             
-            # Convert to nanoseconds
+            # Convert to nanoseconds for Loki timestamp
             local nano_ts=$(date -d "$log_timestamp" +%s%N 2>/dev/null || echo "$DEPLOY_START_TIME")
             
-            # Escape quotes and backslashes in message
-            log_message="${log_message//\\/\\\\}"
-            log_message="${log_message//\"/\\\"}"
+            # Keep full line with timestamp for display in Grafana
+            local full_line="$line"
+            
+            # Escape quotes and backslashes in full line
+            full_line="${full_line//\\/\\\\}"
+            full_line="${full_line//\"/\\\"}"
             
             if [ $count -gt 0 ]; then
                 values+=","
             fi
-            values+="[\"$nano_ts\",\"$log_message\"]"
+            values+="[\"$nano_ts\",\"$full_line\"]"
             
             ((count++))
             

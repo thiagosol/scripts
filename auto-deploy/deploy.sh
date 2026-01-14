@@ -58,17 +58,25 @@ main() {
     log "🚀 Starting Auto-Deploy v2.0"
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
+    # Record start time for duration calculation
+    DEPLOY_START=$(date +%s)
+    
+    # Create GitHub Check Run (if APP_ID_TOKEN provided)
+    create_github_check "$SERVICE" "$HEAD_SHA" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" || true
+    
     # Setup lock trap for cleanup
     setup_lock_trap
     
     # Acquire deployment lock
     if ! acquire_lock "$SERVICE"; then
+        complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Another deployment is already in progress" || true
         exit 2
     fi
     
     # Load secrets from GitHub repository
     if ! load_secrets "$SERVICE"; then
         log "❌ ERROR: Failed to load secrets"
+        complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Failed to load secrets from GitHub repository" || true
         exit 1
     fi
     
@@ -78,6 +86,7 @@ main() {
     # Clone repository
     if ! clone_repository "$SERVICE" "$GIT_REPO" "$BRANCH" "$TEMP_DIR"; then
         log "❌ Deploy failed: Git clone failed"
+        complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Git clone failed for branch ${BRANCH}" || true
         exit 1
     fi
     
@@ -100,6 +109,7 @@ main() {
     # Build Docker image
     if ! build_docker_image "$SERVICE" "$TEMP_DIR"; then
         log "❌ Deploy failed: Docker build failed"
+        complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Docker image build failed" || true
         exit 1
     fi
     
@@ -109,12 +119,14 @@ main() {
     # Tag new image
     if ! tag_docker_image "$SERVICE"; then
         log "❌ Deploy failed: Failed to tag image"
+        complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Failed to tag Docker image" || true
         exit 1
     fi
     
     # Prepare compose file
     if ! prepare_compose_file "$TEMP_DIR" "$BASE_DIR" "$AUTODEPLOY_COMPOSE_FILE"; then
         log "❌ Deploy failed: No docker-compose file found"
+        complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "docker-compose.yml not found in repository" || true
         exit 1
     fi
     COMPOSE_BASENAME="$COMPOSE_FILE_BASENAME"
@@ -142,11 +154,20 @@ main() {
             rollback_with_compose "$SERVICE" "$BASE_DIR" "$COMPOSE_BASENAME"
         fi
         log "❌ Deploy failed: Docker Compose failed to start - rollback attempted"
+        complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Docker Compose failed to start containers (rollback attempted)" || true
         exit 1
     fi
     
     # Clean up old images
     cleanup_docker_images "$SERVICE"
+    
+    # Calculate deployment duration
+    DEPLOY_END=$(date +%s)
+    DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
+    DEPLOY_DURATION_STR="${DEPLOY_DURATION}s"
+    if [ $DEPLOY_DURATION -ge 60 ]; then
+        DEPLOY_DURATION_STR="$((DEPLOY_DURATION / 60))m $((DEPLOY_DURATION % 60))s"
+    fi
     
     # Success!
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -155,6 +176,10 @@ main() {
     log "🌍 Environment: $ENVIRONMENT"
     log "🌿 Branch: $BRANCH"
     log "👤 Git User: $GIT_USER"
+    log "⏱️ Duration: $DEPLOY_DURATION_STR"
+    
+    # Update GitHub Check Run (success)
+    complete_github_check_success "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "$DEPLOY_DURATION_STR" || true
     
     # Send any remaining logs to Loki
     send_remaining_logs_to_loki

@@ -42,8 +42,18 @@ auto-deploy/
     - `main` ou `master` → `prod`
     - `dev`, `develop`, `development` → `dev`
     - `staging`, `stage` → `staging`
+- **APP_ID_TOKEN=<token>**: GitHub token para criar Check Runs (opcional)
+- **COMMIT_AFTER=<sha>**: Commit SHA para associar o Check Run (opcional)
 
 > 💡 **Dica**: Você pode passar os parâmetros opcionais em **qualquer ordem**! O parser identifica automaticamente cada `KEY=VALUE`.
+
+### GitHub Check Runs Integration 🔍
+
+Quando `APP_ID_TOKEN` e `COMMIT_AFTER` são fornecidos, o script cria automaticamente um **GitHub Check Run** chamado "🚀 Container Deployment" que:
+- Mostra status `in_progress` durante o deploy
+- Atualiza para `success` ou `failure` ao final
+- Inclui link para logs no Grafana
+- Exibe duração, ambiente e detalhes do deploy
 
 ### Exemplos
 
@@ -64,6 +74,12 @@ auto-deploy/
 ./deploy.sh my-service BRANCH=dev ENVIRONMENT=staging GIT_USER=thiagosol
 ./deploy.sh my-service ENVIRONMENT=prod BRANCH=main
 ./deploy.sh my-service GIT_USER=otheruser
+
+# Deploy com GitHub Check Runs (integração CI/CD)
+./deploy.sh my-service \
+  BRANCH=main \
+  APP_ID_TOKEN=ghp_xxxxxxxxxxxx \
+  COMMIT_AFTER=f11293328f79c2cc1c6de6a39299eb14ca600e79
 ```
 
 ## ✨ Funcionalidades
