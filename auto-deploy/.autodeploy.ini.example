@@ -1,0 +1,24 @@
+# AutoDeploy Configuration Example
+# 
+# Place this file in the root of your service repository as '.autodeploy.ini'
+# to customize the deployment behavior.
+
+[settings]
+# Specify a custom docker-compose file (optional)
+# If not set, will search for docker-compose*.yml automatically
+compose_file=docker-compose.prod.yml
+
+[copy]
+# Extra files/directories to copy from repo to deployment directory
+# One path per line (relative to repository root)
+scripts/
+config/
+docs/README.md
+
+[render]
+# Files where environment variables should be replaced
+# ${VARIABLE_NAME} will be replaced with actual values from secrets
+# One file per line (relative to deployment directory after copy)
+config/app.conf
+nginx/nginx.conf
+docker-compose.yml
