@@ -69,7 +69,6 @@ main() {
     # Load secrets from GitHub repository
     if ! load_secrets "$SERVICE"; then
         log "❌ ERROR: Failed to load secrets"
-        notify_github "$SERVICE" "failure" "Failed to load secrets from repository"
         exit 1
     fi
     
@@ -78,7 +77,7 @@ main() {
     
     # Clone repository
     if ! clone_repository "$SERVICE" "$GIT_REPO" "$BRANCH" "$TEMP_DIR"; then
-        notify_github "$SERVICE" "failure" "Git clone failed"
+        log "❌ Deploy failed: Git clone failed"
         exit 1
     fi
     
@@ -95,13 +94,12 @@ main() {
         find "$BASE_DIR" -type f -name "*.sh" -exec chmod +x {} \;
         rm -rf "$TEMP_DIR"
         log "✅ Deployment completed without Docker!"
-        notify_github "$SERVICE" "success" "Deployment completed without Docker"
         exit 0
     fi
     
     # Build Docker image
     if ! build_docker_image "$SERVICE" "$TEMP_DIR"; then
-        notify_github "$SERVICE" "failure" "Docker build failed"
+        log "❌ Deploy failed: Docker build failed"
         exit 1
     fi
     
@@ -110,16 +108,16 @@ main() {
     
     # Tag new image
     if ! tag_docker_image "$SERVICE"; then
-        notify_github "$SERVICE" "failure" "Failed to tag image"
+        log "❌ Deploy failed: Failed to tag image"
         exit 1
     fi
     
     # Prepare compose file
-    COMPOSE_BASENAME=$(prepare_compose_file "$TEMP_DIR" "$BASE_DIR" "$AUTODEPLOY_COMPOSE_FILE")
-    if [ -z "$COMPOSE_BASENAME" ]; then
-        notify_github "$SERVICE" "failure" "No docker-compose file found"
+    if ! prepare_compose_file "$TEMP_DIR" "$BASE_DIR" "$AUTODEPLOY_COMPOSE_FILE"; then
+        log "❌ Deploy failed: No docker-compose file found"
         exit 1
     fi
+    COMPOSE_BASENAME="$COMPOSE_FILE_BASENAME"
     
     # Process volumes
     process_volumes "$TEMP_DIR" "$BASE_DIR" "$COMPOSE_BASENAME"
@@ -143,7 +141,7 @@ main() {
         if rollback_docker_image "$SERVICE"; then
             rollback_with_compose "$SERVICE" "$BASE_DIR" "$COMPOSE_BASENAME"
         fi
-        notify_github "$SERVICE" "failure" "Docker Compose failed to start - rollback attempted"
+        log "❌ Deploy failed: Docker Compose failed to start - rollback attempted"
         exit 1
     fi
     
@@ -163,9 +161,6 @@ main() {
     
     # Cleanup old logs
     cleanup_old_logs
-    
-    # Notify GitHub
-    notify_github "$SERVICE" "success" "Deployment completed successfully in $ENVIRONMENT"
     
     exit 0
 }

@@ -71,6 +71,9 @@ rollback_with_compose() {
     fi
 }
 
+# Global variable to store compose file basename
+COMPOSE_FILE_BASENAME=""
+
 # Find and move compose file
 prepare_compose_file() {
     local temp_dir="$1"
@@ -91,23 +94,21 @@ prepare_compose_file() {
         return 1
     fi
     
-    local compose_basename="$(basename "$compose_src")"
-    log "📂 Moving $compose_basename to $base_dir..."
+    COMPOSE_FILE_BASENAME="$(basename "$compose_src")"
+    log "📂 Moving $COMPOSE_FILE_BASENAME to $base_dir..."
     
-    if ! mv "$compose_src" "$base_dir/$compose_basename"; then
+    if ! mv "$compose_src" "$base_dir/$COMPOSE_FILE_BASENAME"; then
         log "❌ ERROR: Failed to move compose file"
         return 1
     fi
     
     # Verify the file was moved successfully
-    if [ ! -f "$base_dir/$compose_basename" ]; then
-        log "❌ ERROR: Compose file not found after move: $base_dir/$compose_basename"
+    if [ ! -f "$base_dir/$COMPOSE_FILE_BASENAME" ]; then
+        log "❌ ERROR: Compose file not found after move: $base_dir/$COMPOSE_FILE_BASENAME"
         return 1
     fi
     
-    log "✅ Compose file ready: $base_dir/$compose_basename"
+    log "✅ Compose file ready: $base_dir/$COMPOSE_FILE_BASENAME"
     
-    # Return the basename for later use
-    echo "$compose_basename"
     return 0
 }
