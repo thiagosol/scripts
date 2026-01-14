@@ -115,6 +115,52 @@ render_files_list() {
   done
 }
 
+# Function to load secrets from GitHub repository
+load_secrets() {
+    local secrets_dir="/tmp/deploy-secrets-$$"
+    local secrets_repo="git@github.com:thiagosol/secrets.git"
+    
+    log "🔐 Loading secrets from GitHub repository..."
+    
+    # Clone secrets repository
+    export GIT_SSH_COMMAND="ssh -i /opt/auto-deploy/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
+    
+    if ! git clone --depth=1 "$secrets_repo" "$secrets_dir" 2>/dev/null; then
+        log "❌ ERROR: Failed to clone secrets repository"
+        rm -rf "$secrets_dir"
+        return 1
+    fi
+    
+    # Check if secrets.json exists
+    if [ ! -f "$secrets_dir/secrets.json" ]; then
+        log "❌ ERROR: secrets.json not found in repository"
+        rm -rf "$secrets_dir"
+        return 1
+    fi
+    
+    # Check if jq is available
+    if ! command -v jq &> /dev/null; then
+        log "❌ ERROR: jq is not installed. Please install jq to parse JSON."
+        rm -rf "$secrets_dir"
+        return 1
+    fi
+    
+    # Read and export all secrets from JSON
+    log "📦 Exporting secrets as environment variables..."
+    while IFS="=" read -r key value; do
+        if [ -n "$key" ] && [ -n "$value" ]; then
+            export "$key=$value"
+            log "✅ Exported: $key"
+        fi
+    done < <(jq -r 'to_entries | .[] | "\(.key)=\(.value)"' "$secrets_dir/secrets.json")
+    
+    # Clean up secrets directory
+    rm -rf "$secrets_dir"
+    
+    log "✅ Secrets loaded successfully!"
+    return 0
+}
+
 # Function to send webhook to GitHub Actions (only if GH_TOKEN is available)
 notify_github() {
     if [ -n "$GH_TOKEN" ]; then
@@ -142,7 +188,8 @@ GIT_REPO="git@github.com:$GIT_USER/$SERVICE.git"
 # Check if service name was provided
 if [ -z "$SERVICE" ]; then
     log "❌ ERROR: Service name is required!"
-    log "Usage: $0 <service-name> [git-user] [VAR=value...]"
+    log "Usage: $0 <service-name> [git-user]"
+    log "Secrets will be loaded automatically from thiagosol/secrets repository"
     exit 1
 fi
 
@@ -177,16 +224,12 @@ fi
 echo $$ > "$LOCK_FILE"
 log "🔒 Deployment lock acquired for '$SERVICE' (PID: $$)"
 
-shift 2
-
-# Export all passed variables (so GH_TOKEN is available)
-for VAR in "$@"; do
-    if [[ "$VAR" =~ ^[a-zA-Z_][a-zA-Z0-9_]*=.*$ ]]; then
-        export "$VAR"
-    else
-        log "⚠️ Skipping invalid variable: $VAR"
-    fi
-done
+# Load secrets from GitHub repository
+if ! load_secrets; then
+    log "❌ ERROR: Failed to load secrets"
+    notify_github "failure" "Failed to load secrets from repository"
+    exit 1
+fi
 
 if [ -d "$TEMP_DIR" ]; then
   sudo chown -R "$(whoami)":"$(whoami)" "$TEMP_DIR"
@@ -219,9 +262,13 @@ if [ -f "$TEMP_DIR/Dockerfile" ]; then
     log "🔨 Building new Docker image..."
     DOCKER_BUILD_CMD="docker build --memory=6g --rm --force-rm -t ${SERVICE}:new"
 
-    for VAR in "$@"; do
-        DOCKER_BUILD_CMD+=" --build-arg $VAR"
-    done
+    # Pass all exported environment variables as build args
+    log "📦 Adding build arguments from secrets..."
+    while IFS='=' read -r -d '' key value; do
+        if [[ "$key" =~ ^[A-Z_][A-Z0-9_]*$ ]]; then
+            DOCKER_BUILD_CMD+=" --build-arg ${key}=\"${value}\""
+        fi
+    done < <(env -0)
 
     DOCKER_BUILD_CMD+=" $TEMP_DIR"
 
