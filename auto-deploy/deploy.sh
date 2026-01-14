@@ -124,6 +124,9 @@ main() {
     # Copy extra configured paths
     copy_extra_paths "$TEMP_DIR" "$BASE_DIR"
     
+    # Copy secrets directory if exists
+    copy_secrets_directory "$TEMP_DIR" "$BASE_DIR"
+    
     # Render files with environment variables
     render_files_list "$BASE_DIR"
     

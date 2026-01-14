@@ -5,6 +5,8 @@
 # Load secrets from GitHub repository
 load_secrets() {
     local service="$1"
+    local environment="${ENVIRONMENT:-prod}"
+    local temp_dir="${TEMP_DIR}"
     local secrets_dir="/tmp/deploy-secrets-$$"
     local secrets_repo="git@github.com:thiagosol/secrets.git"
     
@@ -42,10 +44,30 @@ load_secrets() {
         fi
     done < <(jq -r 'to_entries | .[] | "\(.key)=\(.value)"' "$secrets_dir/secrets.json")
     
-    # Clean up secrets directory
+    log "✅ Secrets loaded successfully! ($count variables exported)"
+    
+    # Copy service-specific secrets if they exist
+    local service_secrets_path="$secrets_dir/$service/$environment"
+    if [ -d "$service_secrets_path" ]; then
+        log "📂 Found service-specific secrets for $service/$environment"
+        
+        # Create secrets directory in temp
+        local dest_secrets_dir="$temp_dir/secrets"
+        mkdir -p "$dest_secrets_dir"
+        
+        # Copy all contents from service/environment to temp/secrets
+        if cp -r "$service_secrets_path/"* "$dest_secrets_dir/" 2>/dev/null; then
+            log "✅ Copied service-specific secrets to $dest_secrets_dir"
+        else
+            log "⚠️ Service secrets directory exists but is empty"
+        fi
+    else
+        log "ℹ️ No service-specific secrets found at $service/$environment (optional, skipping)"
+    fi
+    
+    # Clean up secrets repository clone
     rm -rf "$secrets_dir"
     
-    log "✅ Secrets loaded successfully! ($count variables exported)"
     return 0
 }
 

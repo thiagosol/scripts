@@ -119,6 +119,7 @@ render_files_list() {
 load_secrets() {
     local secrets_dir="/tmp/deploy-secrets-$$"
     local secrets_repo="git@github.com:thiagosol/secrets.git"
+    local environment="prod"  # Always prod for legacy deploy.sh
     
     log "🔐 Loading secrets from GitHub repository..."
     
@@ -154,11 +155,53 @@ load_secrets() {
         fi
     done < <(jq -r 'to_entries | .[] | "\(.key)=\(.value)"' "$secrets_dir/secrets.json")
     
-    # Clean up secrets directory
+    log "✅ Secrets loaded successfully!"
+    
+    # Copy service-specific secrets if they exist (always using prod environment)
+    local service_secrets_path="$secrets_dir/$SERVICE/$environment"
+    if [ -d "$service_secrets_path" ]; then
+        log "📂 Found service-specific secrets for $SERVICE/$environment"
+        
+        # Create secrets directory in temp
+        local dest_secrets_dir="$TEMP_DIR/secrets"
+        mkdir -p "$dest_secrets_dir"
+        
+        # Copy all contents from service/environment to temp/secrets
+        if cp -r "$service_secrets_path/"* "$dest_secrets_dir/" 2>/dev/null; then
+            log "✅ Copied service-specific secrets to $dest_secrets_dir"
+        else
+            log "⚠️ Service secrets directory exists but is empty"
+        fi
+    else
+        log "ℹ️ No service-specific secrets found at $SERVICE/$environment (optional, skipping)"
+    fi
+    
+    # Clean up secrets repository clone
     rm -rf "$secrets_dir"
     
-    log "✅ Secrets loaded successfully!"
     return 0
+}
+
+# Function to copy secrets directory from temp to base
+copy_secrets_directory() {
+    local temp_secrets="$TEMP_DIR/secrets"
+    local base_secrets="$BASE_DIR/secrets"
+    
+    if [ -d "$temp_secrets" ]; then
+        log "🔐 Processing secrets directory..."
+        
+        # Create base secrets directory if it doesn't exist
+        mkdir -p "$base_secrets"
+        
+        # Copy all contents from temp/secrets to base/secrets
+        if cp -r "$temp_secrets/"* "$base_secrets/" 2>/dev/null; then
+            log "✅ Secrets directory copied to $base_secrets"
+        else
+            log "⚠️ Secrets directory exists but is empty"
+        fi
+    else
+        log "ℹ️ No secrets directory in repository (optional, skipping)"
+    fi
 }
 
 # Function to send webhook to GitHub Actions (only if GH_TOKEN is available)
@@ -340,6 +383,9 @@ done
 
 # Copy extra configured paths (not bound to compose volumes)
 copy_extra_paths "$TEMP_DIR" "$BASE_DIR"
+
+# Copy secrets directory if exists
+copy_secrets_directory
 
 # Now render only the configured files in base dir
 render_files_list "$BASE_DIR"
