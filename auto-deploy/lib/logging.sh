@@ -197,7 +197,11 @@ send_new_logs_to_loki() {
             if [ $count -ge $batch_size ]; then
                 values+="]"
                 local payload="{\"streams\":[{\"stream\":$labels,\"values\":$values}]}"
-                curl -s -X POST "$LOKI_URL" -H "Content-Type: application/json" -d "$payload" >/dev/null 2>&1 || true
+                local http_code=$(curl -s -w "%{http_code}" -o /tmp/loki-response-$$.txt -X POST "$LOKI_URL" -H "Content-Type: application/json" -d "$payload" 2>&1)
+                if [ "$http_code" != "204" ] && [ "$http_code" != "200" ]; then
+                    echo "[LOKI ERROR] HTTP $http_code - Response: $(cat /tmp/loki-response-$$.txt 2>/dev/null)" >> /tmp/loki-errors.log
+                fi
+                rm -f /tmp/loki-response-$$.txt
                 values="["
                 count=0
             fi
@@ -208,7 +212,11 @@ send_new_logs_to_loki() {
     if [ $count -gt 0 ]; then
         values+="]"
         local payload="{\"streams\":[{\"stream\":$labels,\"values\":$values}]}"
-        curl -s -X POST "$LOKI_URL" -H "Content-Type: application/json" -d "$payload" >/dev/null 2>&1 || true
+        local http_code=$(curl -s -w "%{http_code}" -o /tmp/loki-response-$$.txt -X POST "$LOKI_URL" -H "Content-Type: application/json" -d "$payload" 2>&1)
+        if [ "$http_code" != "204" ] && [ "$http_code" != "200" ]; then
+            echo "[LOKI ERROR] HTTP $http_code - Response: $(cat /tmp/loki-response-$$.txt 2>/dev/null)" >> /tmp/loki-errors.log
+        fi
+        rm -f /tmp/loki-response-$$.txt
     fi
     
     # Update last sent line number
