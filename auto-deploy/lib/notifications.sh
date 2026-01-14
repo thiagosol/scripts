@@ -63,17 +63,26 @@ create_github_check() {
     log "🌐 GitHub API Response:"
     log "   HTTP Code: $code"
     
-    # Extract check run ID from response
-    GITHUB_CHECK_RUN_ID=$(echo "$response" | grep -o '"id":[0-9]*' | head -1 | cut -d':' -f2)
+    # Extract check run ID from response (root level "id" field)
+    if command -v jq &> /dev/null; then
+        # Use jq if available (more reliable)
+        GITHUB_CHECK_RUN_ID=$(echo "$response" | jq -r '.id' 2>/dev/null)
+    else
+        # Fallback: parse JSON manually (get first "id" at root level)
+        GITHUB_CHECK_RUN_ID=$(echo "$response" | grep -m 1 '"id":' | grep -o '[0-9]\+' | head -1)
+    fi
     
-    if [ "$code" = "201" ] && [ -n "$GITHUB_CHECK_RUN_ID" ]; then
+    if [ "$code" = "201" ] && [ -n "$GITHUB_CHECK_RUN_ID" ] && [ "$GITHUB_CHECK_RUN_ID" != "null" ]; then
         log "✅ GitHub Check Run created (ID: $GITHUB_CHECK_RUN_ID)"
         return 0
     else
         log "❌ Failed to create GitHub Check Run (non-critical)"
         log "   HTTP Code: $code"
-        log "   Full Response:"
-        echo "$response" | while IFS= read -r line; do
+        log "   Extracted ID: ${GITHUB_CHECK_RUN_ID:-empty}"
+        
+        # Show first 500 chars of response for debugging
+        log "   Response preview:"
+        echo "$response" | head -c 500 | while IFS= read -r line; do
             log "     $line"
         done
         
