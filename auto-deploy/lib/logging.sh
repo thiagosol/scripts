@@ -135,17 +135,30 @@ run_command_realtime() {
 
 # Periodic Loki sender (runs in background every 10s)
 start_loki_sender() {
+    # Export variables needed by the background process
+    export LOG_FILE
+    export LOKI_BUFFER_FILE
+    export LOKI_URL
+    export SERVICE
+    export BRANCH
+    export ENVIRONMENT
+    export GIT_USER
+    export DEPLOY_START_TIME
+    
     while true; do
         sleep 10
-        send_new_logs_to_loki
+        send_new_logs_to_loki 2>&1 | logger -t loki-sender || true
     done
 }
 
 # Send only new (unsent) logs to Loki
 send_new_logs_to_loki() {
-    [ -z "$LOG_FILE" ] && return 0
-    [ ! -f "$LOG_FILE" ] && return 0
-    [ -z "$SERVICE" ] && return 0
+    # Debug: write to temp file
+    echo "[$(date)] send_new_logs_to_loki called" >> /tmp/loki-sender-debug.log
+    
+    [ -z "$LOG_FILE" ] && { echo "[$(date)] LOG_FILE empty" >> /tmp/loki-sender-debug.log; return 0; }
+    [ ! -f "$LOG_FILE" ] && { echo "[$(date)] LOG_FILE not found: $LOG_FILE" >> /tmp/loki-sender-debug.log; return 0; }
+    [ -z "$SERVICE" ] && { echo "[$(date)] SERVICE empty" >> /tmp/loki-sender-debug.log; return 0; }
     
     # Read last sent line number
     local last_sent=0
@@ -156,8 +169,13 @@ send_new_logs_to_loki() {
     # Count total lines in log file
     local total_lines=$(wc -l < "$LOG_FILE" 2>/dev/null || echo "0")
     
+    echo "[$(date)] last_sent=$last_sent, total_lines=$total_lines" >> /tmp/loki-sender-debug.log
+    
     # No new lines to send
-    [ "$total_lines" -le "$last_sent" ] && return 0
+    if [ "$total_lines" -le "$last_sent" ]; then
+        echo "[$(date)] No new lines to send" >> /tmp/loki-sender-debug.log
+        return 0
+    fi
     
     # Calculate how many new lines we have
     local new_lines=$((total_lines - last_sent))
@@ -213,15 +231,20 @@ send_new_logs_to_loki() {
     if [ $count -gt 0 ]; then
         values+="]"
         local payload="{\"streams\":[{\"stream\":$labels,\"values\":$values}]}"
+        echo "[$(date)] Sending $count logs to $LOKI_URL" >> /tmp/loki-sender-debug.log
         local http_code=$(curl -s -w "%{http_code}" -o /tmp/loki-response-$$.txt -X POST "$LOKI_URL" -H "Content-Type: application/json" -d "$payload" 2>&1)
+        echo "[$(date)] HTTP response: $http_code" >> /tmp/loki-sender-debug.log
         if [ "$http_code" != "204" ] && [ "$http_code" != "200" ]; then
             echo "[LOKI ERROR] HTTP $http_code - Response: $(cat /tmp/loki-response-$$.txt 2>/dev/null)" >> /tmp/loki-errors.log
         fi
         rm -f /tmp/loki-response-$$.txt
+    else
+        echo "[$(date)] No logs in batch (count=0)" >> /tmp/loki-sender-debug.log
     fi
     
     # Update last sent line number
     echo "$total_lines" > "$LOKI_BUFFER_FILE"
+    echo "[$(date)] Updated buffer to $total_lines" >> /tmp/loki-sender-debug.log
 }
 
 # Send any remaining logs to Loki (called at the end of deploy)
