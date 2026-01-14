@@ -82,6 +82,9 @@ main() {
         exit 1
     fi
     
+    # Apply service-specific secrets (must be after clone)
+    apply_service_secrets "$TEMP_DIR"
+    
     # Read autodeploy configuration
     read_autodeploy_ini "$TEMP_DIR/.autodeploy.ini"
     

@@ -116,6 +116,9 @@ render_files_list() {
 }
 
 # Function to load secrets from GitHub repository
+# Global variable to store service-specific secrets temporarily
+SERVICE_SECRETS_CACHE_DIR=""
+
 load_secrets() {
     local secrets_dir="/tmp/deploy-secrets-$$"
     local secrets_repo="git@github.com:thiagosol/secrets.git"
@@ -157,20 +160,22 @@ load_secrets() {
     
     log "✅ Secrets loaded successfully!"
     
-    # Copy service-specific secrets if they exist (always using prod environment)
+    # Check if service-specific secrets exist and cache them (always using prod environment)
     local service_secrets_path="$secrets_dir/$SERVICE/$environment"
     if [ -d "$service_secrets_path" ]; then
         log "📂 Found service-specific secrets for $SERVICE/$environment"
         
-        # Create secrets directory in temp
-        local dest_secrets_dir="$TEMP_DIR/secrets"
-        mkdir -p "$dest_secrets_dir"
+        # Cache secrets in a temporary location (outside TEMP_DIR)
+        SERVICE_SECRETS_CACHE_DIR="/tmp/deploy-service-secrets-$$"
+        mkdir -p "$SERVICE_SECRETS_CACHE_DIR"
         
-        # Copy all contents from service/environment to temp/secrets
-        if cp -r "$service_secrets_path/"* "$dest_secrets_dir/" 2>/dev/null; then
-            log "✅ Copied service-specific secrets to $dest_secrets_dir"
+        # Copy all contents to cache
+        if cp -r "$service_secrets_path/"* "$SERVICE_SECRETS_CACHE_DIR/" 2>/dev/null; then
+            log "✅ Service-specific secrets cached temporarily"
         else
             log "⚠️ Service secrets directory exists but is empty"
+            rm -rf "$SERVICE_SECRETS_CACHE_DIR"
+            SERVICE_SECRETS_CACHE_DIR=""
         fi
     else
         log "ℹ️ No service-specific secrets found at $SERVICE/$environment (optional, skipping)"
@@ -178,6 +183,34 @@ load_secrets() {
     
     # Clean up secrets repository clone
     rm -rf "$secrets_dir"
+    
+    return 0
+}
+
+# Apply cached service-specific secrets to TEMP_DIR
+# Must be called AFTER git clone
+apply_service_secrets() {
+    if [ -z "$SERVICE_SECRETS_CACHE_DIR" ] || [ ! -d "$SERVICE_SECRETS_CACHE_DIR" ]; then
+        log "ℹ️ No service-specific secrets to apply"
+        return 0
+    fi
+    
+    log "📂 Applying service-specific secrets..."
+    
+    # Create secrets directory in temp
+    local dest_secrets_dir="$TEMP_DIR/secrets"
+    mkdir -p "$dest_secrets_dir"
+    
+    # Copy cached secrets to temp/secrets
+    if cp -r "$SERVICE_SECRETS_CACHE_DIR/"* "$dest_secrets_dir/" 2>/dev/null; then
+        log "✅ Service-specific secrets applied to $dest_secrets_dir"
+    else
+        log "⚠️ Failed to apply service secrets"
+    fi
+    
+    # Clean up cache
+    rm -rf "$SERVICE_SECRETS_CACHE_DIR"
+    SERVICE_SECRETS_CACHE_DIR=""
     
     return 0
 }
@@ -286,6 +319,9 @@ cd "$TEMP_DIR" || { log "ERROR: Failed to access temp directory"; notify_github 
 log "📥 Cloning repository $GIT_REPO (branch: $BRANCH)..."
 export GIT_SSH_COMMAND="ssh -i /opt/auto-deploy/.ssh/id_ed25519 -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
 git clone --depth=1 --branch "$BRANCH" "$GIT_REPO" . || { log "ERROR: Git clone failed"; notify_github "failure" "Git clone failed"; exit 1; }
+
+# Apply service-specific secrets (must be after clone)
+apply_service_secrets
 
 read_autodeploy_ini "$TEMP_DIR/.autodeploy.ini"
 
