@@ -3,7 +3,8 @@
 # Logging with Loki integration
 
 # Loki configuration
-LOKI_URL="${LOKI_URL:-http://localhost:3100/loki/api/v1/push}"
+# Use container name (if in same network) or IP address
+LOKI_URL="${LOKI_URL:-http://loki:3100/loki/api/v1/push}"
 LOG_DIR="/opt/auto-deploy/logs"
 LOG_FILE=""
 DEPLOY_START_TIME=""
