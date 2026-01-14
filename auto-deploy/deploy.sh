@@ -131,14 +131,19 @@ main() {
         exit 1
     fi
     
-    # Backup current image before replacing
-    backup_docker_image "$SERVICE"
-    
-    # Tag new image
-    if ! tag_docker_image "$SERVICE"; then
-        log "❌ Deploy failed: Failed to tag image"
-        complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Failed to tag Docker image" || true
-        exit 1
+    # Only backup and tag if image was actually built
+    if [ "$DOCKER_IMAGE_BUILT" = true ]; then
+        # Backup current image before replacing
+        backup_docker_image "$SERVICE"
+        
+        # Tag new image
+        if ! tag_docker_image "$SERVICE"; then
+            log "❌ Deploy failed: Failed to tag image"
+            complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Failed to tag Docker image" || true
+            exit 1
+        fi
+    else
+        log "ℹ️ Skipping image backup and tagging (no Docker image built)"
     fi
     
     # Prepare compose file
@@ -167,17 +172,23 @@ main() {
     
     # Deploy with Docker Compose (zero-downtime)
     if ! deploy_with_compose "$SERVICE" "$BASE_DIR" "$COMPOSE_BASENAME"; then
-        # Rollback on failure
-        if rollback_docker_image "$SERVICE"; then
-            rollback_with_compose "$SERVICE" "$BASE_DIR" "$COMPOSE_BASENAME"
+        # Rollback on failure (only if Docker image was built)
+        if [ "$DOCKER_IMAGE_BUILT" = true ]; then
+            if rollback_docker_image "$SERVICE"; then
+                rollback_with_compose "$SERVICE" "$BASE_DIR" "$COMPOSE_BASENAME"
+            fi
+            log "❌ Deploy failed: Docker Compose failed to start - rollback attempted"
+        else
+            log "❌ Deploy failed: Docker Compose failed to start"
         fi
-        log "❌ Deploy failed: Docker Compose failed to start - rollback attempted"
-        complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Docker Compose failed to start containers (rollback attempted)" || true
+        complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Docker Compose failed to start containers" || true
         exit 1
     fi
     
-    # Clean up old images
-    cleanup_docker_images "$SERVICE"
+    # Clean up old images (only if we built a new one)
+    if [ "$DOCKER_IMAGE_BUILT" = true ]; then
+        cleanup_docker_images "$SERVICE"
+    fi
     
     # Calculate deployment duration
     DEPLOY_END=$(date +%s)

@@ -2,6 +2,9 @@
 
 # Docker operations
 
+# Global flag to track if Docker image was built
+DOCKER_IMAGE_BUILT=false
+
 # Build Docker image
 build_docker_image() {
     local service="$1"
@@ -9,6 +12,7 @@ build_docker_image() {
     
     if [ ! -f "$temp_dir/Dockerfile" ]; then
         log "⚠️ No Dockerfile found. Skipping build step."
+        DOCKER_IMAGE_BUILT=false
         return 0
     fi
     
@@ -33,10 +37,12 @@ build_docker_image() {
     
     if ! run_command_realtime "Docker build" "$docker_build_cmd"; then
         log "❌ ERROR: Docker build failed"
+        DOCKER_IMAGE_BUILT=false
         return 1
     fi
     
     log "✅ New image built successfully!"
+    DOCKER_IMAGE_BUILT=true
     return 0
 }
 
