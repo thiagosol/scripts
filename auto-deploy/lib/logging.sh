@@ -251,10 +251,11 @@ send_remaining_logs_to_loki() {
     rm -f "$LOKI_BUFFER_FILE" 2>/dev/null || true
 }
 
-# Cleanup old log files (keep last 30 days)
+# Cleanup old log files (keep ONLY current log - everything goes to Loki)
 cleanup_old_logs() {
-    if [ -d "$LOG_DIR" ]; then
-        find "$LOG_DIR" -name "*.log" -type f -mtime +30 -delete 2>/dev/null || true
-        log "🧹 Old log files cleaned up (>30 days)"
+    if [ -d "$LOG_DIR" ] && [ -n "$LOG_FILE" ]; then
+        # Delete all .log files EXCEPT the current one
+        find "$LOG_DIR" -name "*.log" -type f ! -name "$(basename "$LOG_FILE")" -delete 2>/dev/null || true
+        log "🧹 Old log files cleaned up (kept only current log)"
     fi
 }
