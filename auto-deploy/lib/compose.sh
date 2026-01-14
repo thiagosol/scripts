@@ -8,11 +8,25 @@ deploy_with_compose() {
     local base_dir="$2"
     local compose_file="$3"
     
+    log "🚀 Deploying with Docker Compose..."
+    log "   Service: $service"
+    log "   Base dir: $base_dir"
+    log "   Compose file: $compose_file"
+    
+    # Verify compose file exists
+    if [ ! -f "$base_dir/$compose_file" ]; then
+        log "❌ ERROR: Compose file not found: $base_dir/$compose_file"
+        log "   Directory contents:"
+        ls -la "$base_dir" | while IFS= read -r line; do log "     $line"; done
+        return 1
+    fi
+    
     cd "$base_dir" || {
-        log "❌ ERROR: Failed to access base directory"
+        log "❌ ERROR: Failed to access base directory: $base_dir"
         return 1
     }
     
+    log "📍 Current directory: $(pwd)"
     log "🚀 Updating containers with Docker Compose (zero-downtime)..."
     
     # Using 'up -d' without 'down' allows Docker Compose to do a rolling update
@@ -32,7 +46,18 @@ rollback_with_compose() {
     local base_dir="$2"
     local compose_file="$3"
     
-    cd "$base_dir" || return 1
+    log "🔄 Rolling back deployment..."
+    log "   Compose file: $base_dir/$compose_file"
+    
+    if [ ! -f "$base_dir/$compose_file" ]; then
+        log "❌ ERROR: Compose file not found for rollback: $base_dir/$compose_file"
+        return 1
+    fi
+    
+    cd "$base_dir" || {
+        log "❌ ERROR: Failed to access base directory for rollback"
+        return 1
+    }
     
     # Try to start with the old image
     if run_command_realtime "Docker Compose Rollback" "docker-compose -f \"$compose_file\" up -d --remove-orphans"; then
@@ -62,7 +87,7 @@ prepare_compose_file() {
     fi
     
     if [ -z "$compose_src" ] || [ ! -f "$compose_src" ]; then
-        log "❌ ERROR: No docker-compose file found"
+        log "❌ ERROR: No docker-compose file found in $temp_dir"
         return 1
     fi
     
@@ -73,6 +98,14 @@ prepare_compose_file() {
         log "❌ ERROR: Failed to move compose file"
         return 1
     fi
+    
+    # Verify the file was moved successfully
+    if [ ! -f "$base_dir/$compose_basename" ]; then
+        log "❌ ERROR: Compose file not found after move: $base_dir/$compose_basename"
+        return 1
+    fi
+    
+    log "✅ Compose file ready: $base_dir/$compose_basename"
     
     # Return the basename for later use
     echo "$compose_basename"

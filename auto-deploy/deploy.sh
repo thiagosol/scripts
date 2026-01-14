@@ -44,10 +44,7 @@ source "$SCRIPT_DIR/lib/notifications.sh"
 #==============================================================================
 
 main() {
-    log "🚀 Starting Auto-Deploy v2.0"
-    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    
-    # Parse command line arguments
+    # Parse command line arguments FIRST (before logging)
     if ! parse_arguments "$@"; then
         exit 1
     fi
@@ -55,8 +52,11 @@ main() {
     # Initialize deployment configuration
     init_deployment_config "$SERVICE" "$GIT_USER" "$BRANCH"
     
-    # Initialize logging system
+    # Initialize logging system EARLY (so all logs have timestamps)
     init_logging "$SERVICE" "$BRANCH"
+    
+    log "🚀 Starting Auto-Deploy v2.0"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     
     # Setup lock trap for cleanup
     setup_lock_trap
