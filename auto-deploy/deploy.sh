@@ -103,6 +103,24 @@ main() {
         find "$BASE_DIR" -type f -name "*.sh" -exec chmod +x {} \;
         rm -rf "$TEMP_DIR"
         log "✅ Deployment completed without Docker!"
+        
+        # Calculate deployment duration
+        DEPLOY_END=$(date +%s)
+        DEPLOY_DURATION=$((DEPLOY_END - DEPLOY_START))
+        DEPLOY_DURATION_STR="${DEPLOY_DURATION}s"
+        if [ $DEPLOY_DURATION -ge 60 ]; then
+            DEPLOY_DURATION_STR="$((DEPLOY_DURATION / 60))m $((DEPLOY_DURATION % 60))s"
+        fi
+        
+        # Update GitHub Check Run (success)
+        complete_github_check_success "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "$DEPLOY_DURATION_STR" || true
+        
+        # Send any remaining logs to Loki
+        send_remaining_logs_to_loki
+        
+        # Cleanup old logs
+        cleanup_old_logs
+        
         exit 0
     fi
     
