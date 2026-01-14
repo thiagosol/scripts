@@ -178,8 +178,8 @@ notify_github() {
 
 # Define variables
 SERVICE=$1
-GIT_USER=${2:-thiagosol}
-BRANCH="main"
+BRANCH=${2:-main}
+GIT_USER=${3:-thiagosol}
 BASE_DIR="/opt/auto-deploy/$SERVICE"    
 TEMP_DIR="$BASE_DIR/temp"
 LOCK_FILE="$BASE_DIR/.deploy.lock"
