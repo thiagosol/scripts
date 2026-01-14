@@ -181,7 +181,7 @@ send_new_logs_to_loki() {
     local new_lines=$((total_lines - last_sent))
     
     # Read only new lines (skip already sent lines)
-    local labels="{service=\"${SERVICE}\",type=\"deploy\",branch=\"${BRANCH}\",environment=\"${ENVIRONMENT:-unknown}\",git_user=\"${GIT_USER:-unknown}\"}"
+    local labels="{\"service\":\"${SERVICE}\",\"type\":\"deploy\",\"branch\":\"${BRANCH}\",\"environment\":\"${ENVIRONMENT:-unknown}\",\"git_user\":\"${GIT_USER:-unknown}\"}"
     local values="["
     local count=0
     local batch_size=100
