@@ -12,6 +12,24 @@ read_autodeploy_ini() {
     [ -f "$cfg" ] || return 0
     
     log "⚙️ Loading AutoDeploy config: $cfg"
+    
+    # Create a temporary rendered version of the config file
+    local rendered_cfg="${cfg}.rendered"
+    
+    # Render environment variables in the config file
+    if command -v perl &> /dev/null; then
+        log "🧩 Rendering variables in .autodeploy.ini..."
+        perl -pe 's/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/exists $ENV{$1} ? $ENV{$1} : $&/ge' "$cfg" > "$rendered_cfg"
+    else
+        # Fallback: use envsubst if available, otherwise just copy
+        if command -v envsubst &> /dev/null; then
+            envsubst < "$cfg" > "$rendered_cfg"
+        else
+            cp "$cfg" "$rendered_cfg"
+            log "⚠️ perl and envsubst not found, using raw config"
+        fi
+    fi
+    
     local section=""
     
     while IFS= read -r raw || [ -n "$raw" ]; do
@@ -43,7 +61,10 @@ read_autodeploy_ini() {
                 # ignore unknown sections
                 ;;
         esac
-    done < "$cfg"
+    done < "$rendered_cfg"
+    
+    # Clean up temporary file
+    rm -f "$rendered_cfg"
 }
 
 # Copy extra paths configured in [copy] section

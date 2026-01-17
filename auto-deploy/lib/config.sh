@@ -102,7 +102,7 @@ init_deployment_config() {
     local git_user="$2"
     local branch="$3"
     
-    export BASE_DIR="/opt/auto-deploy/$service"
+    export BASE_DIR="/opt/auto-deploy/$service/$ENVIRONMENT"
     export TEMP_DIR="$BASE_DIR/temp"
     export LOCK_FILE="$BASE_DIR/.deploy.lock"
     export GIT_REPO="git@github.com:$git_user/$service.git"
