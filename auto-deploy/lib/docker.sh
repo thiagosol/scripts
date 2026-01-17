@@ -7,17 +7,11 @@ DOCKER_IMAGE_BUILT=false
 
 # Get Docker image name (from .autodeploy.ini or default to service name)
 get_image_name() {
-    local image_name=""
-    
     if [ -n "$AUTODEPLOY_IMAGE_NAME" ]; then
-        image_name="$AUTODEPLOY_IMAGE_NAME"
-        log "🐳 Using custom image name from .autodeploy.ini: $image_name"
+        echo "$AUTODEPLOY_IMAGE_NAME"
     else
-        image_name="$SERVICE"
-        log "🐳 Using default image name (service): $image_name"
+        echo "$SERVICE"
     fi
-    
-    echo "$image_name"
 }
 
 # Build Docker image
@@ -33,6 +27,10 @@ build_docker_image() {
     
     # Get image name (from .autodeploy.ini or default to service name)
     local image_name=$(get_image_name)
+    
+    if [ "$image_name" != "$service" ]; then
+        log "🐳 Using custom image name: $image_name (from .autodeploy.ini)"
+    fi
     
     log "🔨 Building new Docker image: ${image_name}..."
     
