@@ -8,6 +8,11 @@
 # If not set, will search for docker-compose*.yml automatically
 compose_file=docker-compose.prod.yml
 
+# Specify a custom Docker image name (optional)
+# If not set, will use the service name as image name
+# Supports environment variable substitution: ${VARIABLE}
+image_name=my-custom-image-${ENVIRONMENT}
+
 [copy]
 # Extra files/directories to copy from repo to deployment directory
 # One path per line (relative to repository root)

@@ -128,7 +128,8 @@ Suporta arquivo de configuração no repositório do serviço:
 
 ```ini
 [settings]
-compose_file=docker-compose.prod.yml
+compose_file=docker-compose.${ENVIRONMENT}.yml
+image_name=my-custom-image-${ENVIRONMENT}
 
 [copy]
 scripts/
@@ -139,9 +140,13 @@ config/app.conf
 nginx/nginx.conf
 ```
 
-- **[settings]**: Configurações gerais (arquivo compose customizado)
+- **[settings]**: Configurações gerais
+  - `compose_file`: Arquivo docker-compose customizado (opcional, suporta variáveis)
+  - `image_name`: Nome customizado da imagem Docker (opcional, suporta variáveis)
 - **[copy]**: Arquivos/pastas extras para copiar
 - **[render]**: Arquivos para substituição de variáveis `${VAR}`
+
+**NOVO**: O arquivo `.autodeploy.ini` agora suporta substituição de variáveis! Você pode usar `${ENVIRONMENT}`, `${BRANCH}`, `${SERVICE}` ou qualquer secret exportada.
 
 ## 🔄 Fluxo de Deploy
 

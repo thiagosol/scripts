@@ -3,6 +3,7 @@
 # AutoDeploy configuration (.autodeploy.ini)
 
 AUTODEPLOY_COMPOSE_FILE=""
+AUTODEPLOY_IMAGE_NAME=""
 AUTODEPLOY_COPY_LIST=()
 AUTODEPLOY_RENDER_LIST=()
 
@@ -49,6 +50,9 @@ read_autodeploy_ini() {
                 if [[ "$line" == compose_file=* ]]; then
                     AUTODEPLOY_COMPOSE_FILE="${line#compose_file=}"
                     AUTODEPLOY_COMPOSE_FILE="$(trim "$AUTODEPLOY_COMPOSE_FILE")"
+                elif [[ "$line" == image_name=* ]]; then
+                    AUTODEPLOY_IMAGE_NAME="${line#image_name=}"
+                    AUTODEPLOY_IMAGE_NAME="$(trim "$AUTODEPLOY_IMAGE_NAME")"
                 fi
                 ;;
             copy)
