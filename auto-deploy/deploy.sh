@@ -33,10 +33,10 @@ source "$SCRIPT_DIR/lib/config.sh"
 source "$SCRIPT_DIR/lib/lock.sh"
 source "$SCRIPT_DIR/lib/secrets.sh"
 source "$SCRIPT_DIR/lib/git.sh"
+source "$SCRIPT_DIR/lib/autodeploy_config.sh"  # MUST be before docker.sh (defines AUTODEPLOY_IMAGE_NAME)
 source "$SCRIPT_DIR/lib/docker.sh"
 source "$SCRIPT_DIR/lib/compose.sh"
 source "$SCRIPT_DIR/lib/volumes.sh"
-source "$SCRIPT_DIR/lib/autodeploy_config.sh"
 source "$SCRIPT_DIR/lib/notifications.sh"
 
 #==============================================================================

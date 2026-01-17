@@ -50,9 +50,11 @@ read_autodeploy_ini() {
                 if [[ "$line" == compose_file=* ]]; then
                     AUTODEPLOY_COMPOSE_FILE="${line#compose_file=}"
                     AUTODEPLOY_COMPOSE_FILE="$(trim "$AUTODEPLOY_COMPOSE_FILE")"
+                    log "✅ Compose file configured: $AUTODEPLOY_COMPOSE_FILE"
                 elif [[ "$line" == image_name=* ]]; then
                     AUTODEPLOY_IMAGE_NAME="${line#image_name=}"
                     AUTODEPLOY_IMAGE_NAME="$(trim "$AUTODEPLOY_IMAGE_NAME")"
+                    log "🐳 Image name configured: $AUTODEPLOY_IMAGE_NAME"
                 fi
                 ;;
             copy)
@@ -69,6 +71,13 @@ read_autodeploy_ini() {
     
     # Clean up temporary file
     rm -f "$rendered_cfg"
+    
+    # Summary log
+    if [ -n "$AUTODEPLOY_IMAGE_NAME" ]; then
+        log "📦 Using custom image name: $AUTODEPLOY_IMAGE_NAME"
+    else
+        log "📦 Using default image name: $SERVICE"
+    fi
 }
 
 # Copy extra paths configured in [copy] section
