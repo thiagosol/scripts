@@ -40,6 +40,27 @@ source "$SCRIPT_DIR/lib/volumes.sh"
 source "$SCRIPT_DIR/lib/notifications.sh"
 
 #==============================================================================
+# Helper functions
+#==============================================================================
+
+# Exit with error, ensuring logs are sent to Loki first
+exit_with_error() {
+    local exit_code="${1:-1}"
+    
+    # Send remaining logs to Loki before exiting
+    if command -v send_remaining_logs_to_loki &> /dev/null; then
+        send_remaining_logs_to_loki
+    fi
+    
+    # Cleanup old logs
+    if command -v cleanup_old_logs &> /dev/null; then
+        cleanup_old_logs
+    fi
+    
+    exit "$exit_code"
+}
+
+#==============================================================================
 # Main deployment flow
 #==============================================================================
 
@@ -70,14 +91,14 @@ main() {
     # Acquire deployment lock
     if ! acquire_lock "$SERVICE"; then
         complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Another deployment is already in progress" || true
-        exit 2
+        exit_with_error 2
     fi
     
     # Load secrets from GitHub repository
     if ! load_secrets "$SERVICE"; then
         log "❌ ERROR: Failed to load secrets"
         complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Failed to load secrets from GitHub repository" || true
-        exit 1
+        exit_with_error 1
     fi
     
     # Prepare temporary directory
@@ -87,7 +108,7 @@ main() {
     if ! clone_repository "$SERVICE" "$GIT_REPO" "$BRANCH" "$TEMP_DIR"; then
         log "❌ Deploy failed: Git clone failed"
         complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Git clone failed for branch ${BRANCH}" || true
-        exit 1
+        exit_with_error 1
     fi
     
     # Apply service-specific secrets (must be after clone)
@@ -128,7 +149,7 @@ main() {
     if ! build_docker_image "$SERVICE" "$TEMP_DIR"; then
         log "❌ Deploy failed: Docker build failed"
         complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Docker image build failed" || true
-        exit 1
+        exit_with_error 1
     fi
     
     # Only backup and tag if image was actually built
@@ -140,7 +161,7 @@ main() {
         if ! tag_docker_image "$SERVICE"; then
             log "❌ Deploy failed: Failed to tag image"
             complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Failed to tag Docker image" || true
-            exit 1
+            exit_with_error 1
         fi
     else
         log "ℹ️ Skipping image backup and tagging (no Docker image built)"
@@ -154,7 +175,7 @@ main() {
         # Real error preparing compose files
         log "❌ Deploy failed: Error preparing docker-compose files"
         complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Failed to prepare docker-compose files" || true
-        exit 1
+        exit_with_error 1
     fi
     
     HAS_COMPOSE=false
@@ -200,7 +221,7 @@ main() {
                 log "❌ Deploy failed: Docker Compose failed to start"
             fi
             complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Docker Compose failed to start containers" || true
-            exit 1
+            exit_with_error 1
         fi
     else
         log "ℹ️ Skipping Docker Compose deployment (BUILD-ONLY mode)"
