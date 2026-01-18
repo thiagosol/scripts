@@ -146,16 +146,30 @@ main() {
         log "ℹ️ Skipping image backup and tagging (no Docker image built)"
     fi
     
-    # Prepare compose file
-    if ! prepare_compose_file "$TEMP_DIR" "$BASE_DIR" "$AUTODEPLOY_COMPOSE_FILE"; then
-        log "❌ Deploy failed: No docker-compose file found"
-        complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "docker-compose.yml not found in repository" || true
+    # Prepare compose files
+    prepare_compose_files "$TEMP_DIR" "$BASE_DIR"
+    COMPOSE_RESULT=$?
+    
+    if [ $COMPOSE_RESULT -eq 1 ]; then
+        # Real error preparing compose files
+        log "❌ Deploy failed: Error preparing docker-compose files"
+        complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Failed to prepare docker-compose files" || true
         exit 1
     fi
-    COMPOSE_BASENAME="$COMPOSE_FILE_BASENAME"
     
-    # Process volumes
-    process_volumes "$TEMP_DIR" "$BASE_DIR" "$COMPOSE_BASENAME"
+    HAS_COMPOSE=false
+    
+    if [ $COMPOSE_RESULT -eq 0 ]; then
+        HAS_COMPOSE=true
+        log "✅ Running in FULL mode (build + deploy with compose)"
+    else
+        log "ℹ️ Running in BUILD-ONLY mode (docker-compose not found)"
+    fi
+    
+    # Process volumes (only if has compose and single file for now)
+    if [ "$HAS_COMPOSE" = true ] && [ ${#COMPOSE_FILE_BASENAMES[@]} -eq 1 ]; then
+        process_volumes "$TEMP_DIR" "$BASE_DIR" "${COMPOSE_FILE_BASENAMES[0]}"
+    fi
     
     # Copy extra configured paths
     copy_extra_paths "$TEMP_DIR" "$BASE_DIR"
@@ -173,19 +187,25 @@ main() {
     # Set executable permissions for all .sh files
     set_executable_permissions "$BASE_DIR"
     
-    # Deploy with Docker Compose (zero-downtime)
-    if ! deploy_with_compose "$SERVICE" "$BASE_DIR" "$COMPOSE_BASENAME"; then
-        # Rollback on failure (only if Docker image was built)
-        if [ "$DOCKER_IMAGE_BUILT" = true ]; then
-            if rollback_docker_image "$SERVICE"; then
-                rollback_with_compose "$SERVICE" "$BASE_DIR" "$COMPOSE_BASENAME"
+    # Deploy with Docker Compose (only if compose files exist)
+    if [ "$HAS_COMPOSE" = true ]; then
+        if ! deploy_with_compose "$SERVICE" "$BASE_DIR" "${COMPOSE_FILE_BASENAMES[@]}"; then
+            # Rollback on failure (only if Docker image was built)
+            if [ "$DOCKER_IMAGE_BUILT" = true ]; then
+                if rollback_docker_image "$SERVICE"; then
+                    rollback_with_compose "$SERVICE" "$BASE_DIR" "${COMPOSE_FILE_BASENAMES[@]}"
+                fi
+                log "❌ Deploy failed: Docker Compose failed to start - rollback attempted"
+            else
+                log "❌ Deploy failed: Docker Compose failed to start"
             fi
-            log "❌ Deploy failed: Docker Compose failed to start - rollback attempted"
-        else
-            log "❌ Deploy failed: Docker Compose failed to start"
+            complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Docker Compose failed to start containers" || true
+            exit 1
         fi
-        complete_github_check_failure "$SERVICE" "$ENVIRONMENT" "$BRANCH" "$GIT_USER" "Docker Compose failed to start containers" || true
-        exit 1
+    else
+        log "ℹ️ Skipping Docker Compose deployment (BUILD-ONLY mode)"
+        log "📦 Docker image built and tagged successfully!"
+        log "💡 To deploy, create a docker-compose.yml in your repository or manually run the container"
     fi
     
     # Clean up old images (only if we built a new one)

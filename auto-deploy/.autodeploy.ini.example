@@ -5,8 +5,17 @@
 
 [settings]
 # Specify a custom docker-compose file (optional)
-# If not set, will search for docker-compose*.yml automatically
-compose_file=docker-compose.prod.yml
+# Single file:
+compose_file=docker-compose.${ENVIRONMENT}.yml
+
+# OR multiple files (comma-separated or multiple lines):
+compose_files=docker-compose.yml,docker-compose.monitoring.yml
+# compose_files=docker-compose.cache.yml
+
+# Specify a custom Docker Compose project name (optional)
+# If not set, will use: ${SERVICE}-${ENVIRONMENT}
+# Supports environment variable substitution: ${VARIABLE}
+project_name=my-project-${ENVIRONMENT}
 
 # Specify a custom Docker image name (optional)
 # If not set, will use the service name as image name

@@ -2,8 +2,9 @@
 
 # AutoDeploy configuration (.autodeploy.ini)
 
-AUTODEPLOY_COMPOSE_FILE=""
+AUTODEPLOY_COMPOSE_FILES=()  # Changed to array for multiple files
 AUTODEPLOY_IMAGE_NAME=""
+AUTODEPLOY_PROJECT_NAME=""   # Custom project name
 AUTODEPLOY_COPY_LIST=()
 AUTODEPLOY_RENDER_LIST=()
 
@@ -48,9 +49,26 @@ read_autodeploy_ini() {
         case "$section" in
             settings)
                 if [[ "$line" == compose_file=* ]]; then
-                    AUTODEPLOY_COMPOSE_FILE="${line#compose_file=}"
-                    AUTODEPLOY_COMPOSE_FILE="$(trim "$AUTODEPLOY_COMPOSE_FILE")"
-                    log "✅ Compose file configured: $AUTODEPLOY_COMPOSE_FILE"
+                    # Single file (backward compatibility)
+                    local file="${line#compose_file=}"
+                    file="$(trim "$file")"
+                    AUTODEPLOY_COMPOSE_FILES+=("$file")
+                    log "📄 Compose file configured: $file"
+                elif [[ "$line" == compose_files=* ]]; then
+                    # Multiple files (comma-separated or multiple lines)
+                    local files="${line#compose_files=}"
+                    files="$(trim "$files")"
+                    # Split by comma
+                    IFS=',' read -ra file_array <<< "$files"
+                    for f in "${file_array[@]}"; do
+                        f="$(trim "$f")"
+                        [ -n "$f" ] && AUTODEPLOY_COMPOSE_FILES+=("$f")
+                        log "📄 Compose file configured: $f"
+                    done
+                elif [[ "$line" == project_name=* ]]; then
+                    AUTODEPLOY_PROJECT_NAME="${line#project_name=}"
+                    AUTODEPLOY_PROJECT_NAME="$(trim "$AUTODEPLOY_PROJECT_NAME")"
+                    log "🏷️ Project name configured: $AUTODEPLOY_PROJECT_NAME"
                 elif [[ "$line" == image_name=* ]]; then
                     AUTODEPLOY_IMAGE_NAME="${line#image_name=}"
                     AUTODEPLOY_IMAGE_NAME="$(trim "$AUTODEPLOY_IMAGE_NAME")"
@@ -73,6 +91,16 @@ read_autodeploy_ini() {
     rm -f "$rendered_cfg"
     
     # Summary log
+    if [ ${#AUTODEPLOY_COMPOSE_FILES[@]} -gt 0 ]; then
+        log "📦 Compose files to deploy: ${#AUTODEPLOY_COMPOSE_FILES[@]}"
+    fi
+    
+    if [ -n "$AUTODEPLOY_PROJECT_NAME" ]; then
+        log "📦 Using custom project name: $AUTODEPLOY_PROJECT_NAME"
+    else
+        log "📦 Using default project name: ${SERVICE}-${ENVIRONMENT}"
+    fi
+    
     if [ -n "$AUTODEPLOY_IMAGE_NAME" ]; then
         log "📦 Using custom image name: $AUTODEPLOY_IMAGE_NAME"
     else
