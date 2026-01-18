@@ -29,9 +29,10 @@ deploy_with_compose() {
     log "📍 Current directory: $(pwd)"
     log "🚀 Updating containers with Docker Compose (zero-downtime)..."
     
-    # Using 'up -d' without 'down' allows Docker Compose to do a rolling update
-    # It will stop the old container and start the new one minimizing downtime
-    if run_command_realtime "Docker Compose Up" "docker-compose -f \"$compose_file\" up -d --remove-orphans"; then
+    local project_name="${service}-${ENVIRONMENT}"
+    log "🏷️ Docker Compose project name: $project_name"
+    
+    if run_command_realtime "Docker Compose Up" "docker-compose -p \"$project_name\" -f \"$compose_file\" up -d --remove-orphans"; then
         log "✅ Containers updated successfully!"
         return 0
     else
@@ -59,8 +60,11 @@ rollback_with_compose() {
         return 1
     }
     
+    local project_name="${service}-${ENVIRONMENT}"
+    log "🏷️ Docker Compose project name: $project_name"
+    
     # Try to start with the old image
-    if run_command_realtime "Docker Compose Rollback" "docker-compose -f \"$compose_file\" up -d --remove-orphans"; then
+    if run_command_realtime "Docker Compose Rollback" "docker-compose -p \"$project_name\" -f \"$compose_file\" up -d --remove-orphans"; then
         log "✅ Rollback successful! Service restored to previous version."
         # Clean the failed 'new' image
         docker images "${service}" --format "{{.ID}}" | head -n 1 | xargs -r docker rmi -f 2>/dev/null || true
