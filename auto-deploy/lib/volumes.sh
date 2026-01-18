@@ -43,6 +43,12 @@ process_volumes() {
     fi
     
     for vol in $volumes; do
+        # Skip 'secrets' volume - it's handled by copy_secrets_directory()
+        if [ "$vol" = "secrets" ]; then
+            log "ℹ️ Skipping 'secrets' volume (handled separately)"
+            continue
+        fi
+        
         local src="$temp_dir/$vol"
         local dest="$base_dir/$vol"
         
