@@ -37,9 +37,24 @@ build_docker_image() {
     # Enable BuildKit for better performance and caching
     export DOCKER_BUILDKIT=1
     
-    local docker_build_cmd="docker build --memory=4g --memory-swap=6g --rm --force-rm"
-    docker_build_cmd+=" --cache-from ${image_name}:latest"
-    docker_build_cmd+=" -t ${image_name}:new"
+    # Limit to 2 CPUs using taskset (if available)
+    local cpu_limit=""
+    if command -v taskset &> /dev/null; then
+        cpu_limit="taskset -c 0-1 "
+        log "⚙️ Limiting build to 2 CPUs (cores 0-1)"
+    fi
+    
+    # Build command with proper buildx flags (--rm and --force-rm are not supported by buildx)
+    local docker_build_cmd="${cpu_limit}docker buildx build"
+    docker_build_cmd+=" --memory=5g --memory-swap=9g"
+    
+    # Try to use cache from existing local image (ignore errors if image doesn't exist)
+    if docker image inspect "${image_name}:latest" &>/dev/null; then
+        docker_build_cmd+=" --cache-from ${image_name}:latest"
+        log "📦 Using build cache from: ${image_name}:latest"
+    fi
+    
+    docker_build_cmd+=" --load -t ${image_name}:new"
     
     # Add build arguments from environment variables
     log "📦 Adding build arguments from secrets..."
