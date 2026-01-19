@@ -39,7 +39,7 @@ build_docker_image() {
     
     local docker_build_cmd="docker buildx build --rm --force-rm"
     docker_build_cmd+=" --cache-from ${image_name}:latest"
-    docker_build_cmd+=" -t ${image_name}:new"
+    docker_build_cmd+=" --load -t ${image_name}:new"
     
     # Add build arguments from environment variables
     log "📦 Adding build arguments from secrets..."
