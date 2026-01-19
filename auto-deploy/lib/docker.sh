@@ -37,7 +37,7 @@ build_docker_image() {
     # Enable BuildKit for better performance and caching
     export DOCKER_BUILDKIT=1
     
-    local docker_build_cmd="docker build --memory=6g --rm --force-rm"
+    local docker_build_cmd="docker build --cpus=2 --memory=4g --memory-swap=6g --rm --force-rm"
     docker_build_cmd+=" --cache-from ${image_name}:latest"
     docker_build_cmd+=" -t ${image_name}:new"
     
