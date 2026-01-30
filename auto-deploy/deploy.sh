@@ -232,6 +232,7 @@ main() {
     # Clean up old images (only if we built a new one)
     if [ "$DOCKER_IMAGE_BUILT" = true ]; then
         cleanup_docker_images "$SERVICE"
+        cleanup_buildx_builder  # Stop buildx builder if configured
     fi
     
     # Calculate deployment duration

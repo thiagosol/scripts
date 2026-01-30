@@ -161,3 +161,26 @@ cleanup_docker_images() {
         echo "$old_images" | xargs -r docker rmi -f 2>/dev/null || log "⚠️ Some old images are still in use"
     fi
 }
+
+# Stop buildx builder containers to free up RAM
+cleanup_buildx_builder() {
+    log "🧹 Stopping buildx builder containers..."
+    
+    # Find all buildx builder containers
+    local buildx_containers=$(docker ps --filter "ancestor=moby/buildkit:buildx-stable-1" --format "{{.Names}}" 2>/dev/null)
+    
+    if [ -z "$buildx_containers" ]; then
+        log "ℹ️ No buildx builder containers running"
+        return 0
+    fi
+    
+    # Stop each builder container
+    while IFS= read -r container_name; do
+        if [ -n "$container_name" ]; then
+            log "🛑 Stopping buildx container: $container_name"
+            docker stop "$container_name" >/dev/null 2>&1 || log "⚠️ Could not stop $container_name"
+        fi
+    done <<< "$buildx_containers"
+    
+    log "✅ Buildx builders stopped (will auto-start on next build)"
+}
