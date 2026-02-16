@@ -117,6 +117,9 @@ main() {
     # Read autodeploy configuration
     read_autodeploy_ini "$TEMP_DIR/.autodeploy.ini"
     
+    # Load external images into buildx (if configured)
+    load_external_images
+    
     # Check if this is a Docker-based deployment
     if [ ! -f "$TEMP_DIR/Dockerfile" ] && [ -z "$(find "$TEMP_DIR" -maxdepth 1 -type f -name 'docker-compose*.yml' -print -quit)" ]; then
         log "⚠️ No Dockerfile or docker-compose.yml found. Copying files and finishing deployment."

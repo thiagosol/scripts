@@ -14,6 +14,80 @@ get_image_name() {
     fi
 }
 
+# Load external images into buildx builder before build
+# This ensures external images are available during build stages (e.g., COPY --from, FROM)
+# Buildx uses a separate builder container, so we need to explicitly load local images
+# For local-only images, we do a minimal build to force buildx to load them
+# Supports both local images (already on server) and remote images (will be pulled)
+load_external_images() {
+    [ ${#AUTODEPLOY_EXTERNAL_IMAGES[@]} -eq 0 ] && return 0
+    
+    log "📥 Loading external images into buildx builder..."
+    
+    # Create a temporary directory for dummy Dockerfiles
+    local temp_dockerfile_dir=$(mktemp -d)
+    trap "rm -rf '$temp_dockerfile_dir'" RETURN
+    
+    for image in "${AUTODEPLOY_EXTERNAL_IMAGES[@]}"; do
+        image="$(trim "$image")"
+        [ -z "$image" ] && continue
+        
+        # First, check if image already exists locally (could be a local-only image)
+        if docker image inspect "$image" >/dev/null 2>&1; then
+            log "🔄 Loading local image into buildx builder: $image"
+            
+            # For local-only images, we need to force buildx to load them into the builder
+            # We do this by creating a minimal Dockerfile and doing a quick build
+            # This ensures the image is available in the buildx builder context
+            local safe_image_name="${image//\//_}"
+            safe_image_name="${safe_image_name//:/_}"
+            local dummy_dockerfile="$temp_dockerfile_dir/Dockerfile.$safe_image_name"
+            echo "FROM $image" > "$dummy_dockerfile"
+            echo "RUN echo 'Loading image into buildx'" >> "$dummy_dockerfile"
+            
+            # Do a minimal build to force buildx to load the local image into builder context
+            # Use --load to keep it in local daemon, but the build process loads the base image
+            local temp_tag="buildx-temp-$(date +%s)-$RANDOM"
+            if run_logged_command "Load local image into buildx" "docker buildx build --load --cache-from $image -f \"$dummy_dockerfile\" -t \"$temp_tag\" \"$temp_dockerfile_dir\" >/dev/null 2>&1"; then
+                # Clean up the temporary tag
+                docker rmi "$temp_tag" >/dev/null 2>&1 || true
+                log "✅ Local image loaded into buildx builder: $image"
+            else
+                log "⚠️ Could not load local image via build (may still work with --cache-from): $image"
+            fi
+            continue
+        fi
+        
+        # Image doesn't exist locally, try to pull it
+        log "📥 Pulling external image from registry: $image"
+        
+        # Pull the image to make it available locally
+        if ! run_logged_command "Pull image $image" "docker pull \"$image\""; then
+            log "⚠️ Failed to pull image: $image"
+            log "ℹ️  Image may be local-only or will be created during build"
+            continue
+        fi
+        
+        # After pulling, also load it into buildx builder
+        log "🔄 Loading pulled image into buildx builder: $image"
+        local safe_image_name="${image//\//_}"
+        safe_image_name="${safe_image_name//:/_}"
+        local dummy_dockerfile="$temp_dockerfile_dir/Dockerfile.$safe_image_name"
+        echo "FROM $image" > "$dummy_dockerfile"
+        echo "RUN echo 'Loading image into buildx'" >> "$dummy_dockerfile"
+        
+        local temp_tag="buildx-temp-$(date +%s)-$RANDOM"
+        if run_logged_command "Load pulled image into buildx" "docker buildx build --load --cache-from $image -f \"$dummy_dockerfile\" -t \"$temp_tag\" \"$temp_dockerfile_dir\" >/dev/null 2>&1"; then
+            docker rmi "$temp_tag" >/dev/null 2>&1 || true
+            log "✅ Image pulled and loaded into buildx builder: $image"
+        else
+            log "✅ Image pulled (will be available via --cache-from): $image"
+        fi
+    done
+    
+    log "✅ External images loaded into buildx builder context"
+}
+
 # Build Docker image
 build_docker_image() {
     local service="$1"
@@ -52,6 +126,24 @@ build_docker_image() {
     if docker image inspect "${image_name}:latest" &>/dev/null; then
         docker_build_cmd+=" --cache-from ${image_name}:latest"
         log "📦 Using build cache from: ${image_name}:latest"
+    fi
+    
+    # Add external images as --cache-from to force buildx to load them into builder context
+    # This ensures local images are available during build stages (e.g., COPY --from, FROM)
+    if [ ${#AUTODEPLOY_EXTERNAL_IMAGES[@]} -gt 0 ]; then
+        log "📥 Adding external images to buildx context via --cache-from..."
+        for ext_image in "${AUTODEPLOY_EXTERNAL_IMAGES[@]}"; do
+            ext_image="$(trim "$ext_image")"
+            [ -z "$ext_image" ] && continue
+            
+            # Check if image exists locally (including local-only images)
+            if docker image inspect "$ext_image" >/dev/null 2>&1; then
+                docker_build_cmd+=" --cache-from $ext_image"
+                log "  ✓ Added to build context: $ext_image"
+            else
+                log "  ⚠️ Skipping (not found locally): $ext_image"
+            fi
+        done
     fi
     
     docker_build_cmd+=" --load -t ${image_name}:new"

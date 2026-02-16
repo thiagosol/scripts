@@ -22,6 +22,22 @@ project_name=my-project-${ENVIRONMENT}
 # Supports environment variable substitution: ${VARIABLE}
 image_name=my-custom-image-${ENVIRONMENT}
 
+# External images to load into buildx before build
+# These images will be pulled and made available during build stages
+# Useful for multi-stage builds that reference external images (COPY --from, FROM, etc.)
+# Single image:
+external_image=node:18-alpine
+
+# OR multiple images (comma-separated):
+external_images=node:18-alpine,nginx:alpine,redis:7-alpine
+
+[external_images]
+# OR list external images one per line in this section:
+# node:18-alpine
+# nginx:alpine
+# redis:7-alpine
+# postgres:15-alpine
+
 [copy]
 # Extra files/directories to copy from repo to deployment directory
 # One path per line (relative to repository root)
