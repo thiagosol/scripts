@@ -80,20 +80,66 @@ load_external_images() {
                 
                 if echo "$error_content" | grep -qi "failed to solve\|pull access denied\|repository does not exist\|authorization failed"; then
                     log "  ⚠️ Buildx cannot resolve local image (docker-container driver)"
-                    log "  🔧 Exporting image for use with --cache-from type=local..."
+                    log "  🔧 Exporting and importing image into buildx cache..."
                     
-                    # For docker-container driver, we need to export the image and use type=local
-                    # Use the persistent directory so the tar survives until main build
+                    # For docker-container driver, export the image and import it into buildx cache
+                    # Use the persistent directory so the tar survives until import
                     local image_tar="$EXPORTED_IMAGES_TEMP_DIR/${safe_image_name}.tar"
-                    if docker save "$image" -o "$image_tar" 2>/dev/null; then
-                        # Store the path for use in the main build
-                        EXPORTED_IMAGE_PATHS["$image"]="$image_tar"
-                        log "  ✓ Image exported: $image"
-                        log "  ℹ️  Will use type=local cache in main build"
-                    else
+                    if ! docker save "$image" -o "$image_tar" 2>/dev/null; then
                         log "  ❌ Failed to export image: $image"
                         log "  💡 Please ensure image exists: docker images | grep $(echo $image | cut -d: -f1)"
+                        continue
                     fi
+                    
+                    log "  📥 Importing image into buildx builder cache..."
+                    
+                    # The key: we need to make buildx "see" the image by doing a build that imports it
+                    # Create a Dockerfile that will import and use the image
+                    echo "FROM $image AS base" > "$dummy_dockerfile"
+                    echo "FROM scratch" >> "$dummy_dockerfile"
+                    echo "COPY --from=base / /" >> "$dummy_dockerfile"
+                    
+                    # Import the tar and build - this forces buildx to load the image
+                    local import_output=$(mktemp)
+                    local import_tag="buildx-import-$(date +%s)-$RANDOM"
+                    
+                    # The real solution: we need to make buildx use the local daemon to resolve the image
+                    # When using --load, buildx should access local daemon, but it tries registry first
+                    # So we load the image into local daemon and then do a build that forces buildx to use it
+                    
+                    # First, ensure image is in local daemon
+                    if docker load -i "$image_tar" >/dev/null 2>&1; then
+                        log "  ✓ Image loaded into local daemon"
+                        
+                        # Now do a build that uses the image - with --load, buildx should access local daemon
+                        # But the problem is buildx still tries registry first...
+                        # Solution: we need to make buildx "see" the image in its cache
+                        # by doing a build that actually uses it and caches it
+                        
+                        echo "FROM $image" > "$dummy_dockerfile"
+                        echo "RUN echo 'Caching image in buildx'" >> "$dummy_dockerfile"
+                        
+                        # Do the build - this should make buildx cache the image
+                        # The key is using --load which makes buildx access local daemon
+                        if docker buildx build --load -f "$dummy_dockerfile" -t "$import_tag" "$temp_dockerfile_dir" >"$import_output" 2>&1; then
+                            docker rmi "$import_tag" >/dev/null 2>&1 || true
+                            log "  ✓ Image cached in buildx builder: $image"
+                            EXPORTED_IMAGE_PATHS["$image"]="imported"
+                        else
+                            # Even if build fails, the image might be in cache
+                            local import_error=$(cat "$import_output" 2>/dev/null || echo "")
+                            if echo "$import_error" | grep -qi "failed to solve\|pull access denied"; then
+                                log "  ⚠️ Buildx still tries registry first (docker-container limitation)"
+                                log "  💡 Workaround: Tag image with a registry prefix or use 'docker' driver"
+                                log "  💡 Example: docker tag $image localhost:5000/$image"
+                            else
+                                log "  ⚠️ Build failed but image is in local daemon"
+                            fi
+                        fi
+                    else
+                        log "  ❌ Cannot load image into local daemon"
+                    fi
+                    rm -f "$import_output"
                 else
                     log "  ⚠️ Build failed (may still work in main build): $image"
                 fi
@@ -152,6 +198,40 @@ build_docker_image() {
         log "⚙️ Limiting build to 2 CPUs (cores 0-1)"
     fi
     
+    # Check current builder and switch to 'docker' driver if we have local-only images
+    # The docker-container driver cannot resolve local-only images (tries registry first)
+    local current_builder=$(docker buildx ls | grep '\*' | awk '{print $1}' | head -n 1)
+    local builder_driver=""
+    local switched_driver=false
+    
+    if [ -n "$current_builder" ]; then
+        builder_driver=$(docker buildx inspect "$current_builder" 2>/dev/null | grep "Driver:" | awk '{print $2}' || echo "docker")
+    fi
+    
+    # Check if we have local-only images
+    if [ "$builder_driver" = "docker-container" ] && [ ${#AUTODEPLOY_EXTERNAL_IMAGES[@]} -gt 0 ]; then
+        for ext_image in "${AUTODEPLOY_EXTERNAL_IMAGES[@]}"; do
+            ext_image="$(trim "$ext_image")"
+            [ -z "$ext_image" ] && continue
+            
+            if docker image inspect "$ext_image" >/dev/null 2>&1; then
+                # Check if image exists in registry
+                if ! docker manifest inspect "$ext_image" >/dev/null 2>&1 2>/dev/null; then
+                    log "⚠️ Local-only image detected: $ext_image"
+                    log "🔄 Switching to 'docker' driver (docker-container cannot resolve local images)"
+                    if docker buildx use default >/dev/null 2>&1; then
+                        switched_driver=true
+                        log "✓ Switched to 'docker' driver for this build"
+                        break
+                    else
+                        log "⚠️ Could not switch to 'docker' driver"
+                        log "💡 Please run: docker buildx use default"
+                    fi
+                fi
+            fi
+        done
+    fi
+    
     # Build command with proper buildx flags (--rm and --force-rm are not supported by buildx)
     local docker_build_cmd="${cpu_limit}docker buildx build"
     docker_build_cmd+=" --memory=5g --memory-swap=9g"
@@ -162,8 +242,9 @@ build_docker_image() {
         log "📦 Using build cache from: ${image_name}:latest"
     fi
     
-    # Add external images as --cache-from to force buildx to load them into builder context
-    # For docker-container driver with local images, use type=local with exported tar files
+    # Add external images as --cache-from
+    # Note: For docker-container driver, --cache-from alone may not work for local images
+    # But we add them anyway - the pre-loading above should have made them available
     if [ ${#AUTODEPLOY_EXTERNAL_IMAGES[@]} -gt 0 ]; then
         log "📥 Adding external images to buildx context via --cache-from..."
         for ext_image in "${AUTODEPLOY_EXTERNAL_IMAGES[@]}"; do
@@ -172,15 +253,8 @@ build_docker_image() {
             
             # Check if image exists locally (including local-only images)
             if docker image inspect "$ext_image" >/dev/null 2>&1; then
-                # If we exported this image (for docker-container driver), use type=local
-                if [ -n "${EXPORTED_IMAGE_PATHS[$ext_image]}" ] && [ -f "${EXPORTED_IMAGE_PATHS[$ext_image]}" ]; then
-                    docker_build_cmd+=" --cache-from type=local,src=${EXPORTED_IMAGE_PATHS[$ext_image]}"
-                    log "  ✓ Added as type=local cache: $ext_image"
-                else
-                    # Regular --cache-from (works for docker driver or if image was preloaded)
-                    docker_build_cmd+=" --cache-from $ext_image"
-                    log "  ✓ Added to build context: $ext_image"
-                fi
+                docker_build_cmd+=" --cache-from $ext_image"
+                log "  ✓ Added to build context: $ext_image"
             else
                 log "  ⚠️ Skipping (not found locally): $ext_image"
             fi
@@ -209,6 +283,12 @@ build_docker_image() {
     
     # Clean up exported images after successful build
     [ -n "$EXPORTED_IMAGES_TEMP_DIR" ] && rm -rf "$EXPORTED_IMAGES_TEMP_DIR" 2>/dev/null || true
+    
+    # Switch back to original builder if we switched
+    if [ "$switched_driver" = true ] && [ -n "$current_builder" ]; then
+        log "🔄 Switching back to original builder: $current_builder"
+        docker buildx use "$current_builder" >/dev/null 2>&1 || true
+    fi
     
     log "✅ New image built successfully: ${image_name}:new"
     DOCKER_IMAGE_BUILT=true
