@@ -34,26 +34,46 @@ load_external_images() {
         
         # First, check if image already exists locally (could be a local-only image)
         if docker image inspect "$image" >/dev/null 2>&1; then
-            log "🔄 Loading local image into buildx builder: $image"
+            log "🔄 Preparing local image for buildx: $image"
             
-            # For local-only images, we need to force buildx to load them into the builder
-            # We do this by creating a minimal Dockerfile and doing a quick build
-            # This ensures the image is available in the buildx builder context
+            # For local images, we need to ensure buildx can access them
+            # The --cache-from in the main build should work if buildx uses docker driver
+            # But we try to "warm up" the builder by doing a minimal build
+            
             local safe_image_name="${image//\//_}"
             safe_image_name="${safe_image_name//:/_}"
             local dummy_dockerfile="$temp_dockerfile_dir/Dockerfile.$safe_image_name"
             echo "FROM $image" > "$dummy_dockerfile"
-            echo "RUN echo 'Loading image into buildx'" >> "$dummy_dockerfile"
+            echo "RUN echo 'Warming up buildx cache'" >> "$dummy_dockerfile"
             
-            # Do a minimal build to force buildx to load the local image into builder context
-            # Use --load to keep it in local daemon, but the build process loads the base image
+            # Try a minimal build to warm up the buildx cache
+            # This helps ensure the image is available in the builder context
             local temp_tag="buildx-temp-$(date +%s)-$RANDOM"
-            if run_logged_command "Load local image into buildx" "docker buildx build --load --cache-from $image -f \"$dummy_dockerfile\" -t \"$temp_tag\" \"$temp_dockerfile_dir\" >/dev/null 2>&1"; then
-                # Clean up the temporary tag
+            local build_output=$(mktemp)
+            local loaded=false
+            
+            # Try build without --load first (faster, just loads into builder)
+            if docker buildx build --cache-from "$image" -f "$dummy_dockerfile" -t "$temp_tag" "$temp_dockerfile_dir" 2>"$build_output"; then
+                log "  ✓ Image warmed up in buildx cache: $image"
+                loaded=true
+            # Try with --load as fallback
+            elif docker buildx build --load --cache-from "$image" -f "$dummy_dockerfile" -t "$temp_tag" "$temp_dockerfile_dir" 2>"$build_output"; then
                 docker rmi "$temp_tag" >/dev/null 2>&1 || true
-                log "✅ Local image loaded into buildx builder: $image"
+                log "  ✓ Image loaded via build with --load: $image"
+                loaded=true
             else
-                log "⚠️ Could not load local image via build (may still work with --cache-from): $image"
+                # If both methods fail, it's not critical - --cache-from in main build may still work
+                local error_msg=$(head -n 3 "$build_output" 2>/dev/null | tr '\n' ' ' || echo "unknown error")
+                log "  ⚠️ Could not warm up buildx cache (non-critical): $image"
+                log "  ℹ️  Error: ${error_msg:0:100}..."
+                log "  ℹ️  Will rely on --cache-from in main build (may still work)"
+            fi
+            
+            rm -f "$build_output" >/dev/null 2>&1 || true
+            docker rmi "$temp_tag" >/dev/null 2>&1 || true
+            
+            if [ "$loaded" = true ]; then
+                log "✅ Local image prepared for buildx: $image"
             fi
             continue
         fi
@@ -68,21 +88,9 @@ load_external_images() {
             continue
         fi
         
-        # After pulling, also load it into buildx builder
-        log "🔄 Loading pulled image into buildx builder: $image"
-        local safe_image_name="${image//\//_}"
-        safe_image_name="${safe_image_name//:/_}"
-        local dummy_dockerfile="$temp_dockerfile_dir/Dockerfile.$safe_image_name"
-        echo "FROM $image" > "$dummy_dockerfile"
-        echo "RUN echo 'Loading image into buildx'" >> "$dummy_dockerfile"
-        
-        local temp_tag="buildx-temp-$(date +%s)-$RANDOM"
-        if run_logged_command "Load pulled image into buildx" "docker buildx build --load --cache-from $image -f \"$dummy_dockerfile\" -t \"$temp_tag\" \"$temp_dockerfile_dir\" >/dev/null 2>&1"; then
-            docker rmi "$temp_tag" >/dev/null 2>&1 || true
-            log "✅ Image pulled and loaded into buildx builder: $image"
-        else
-            log "✅ Image pulled (will be available via --cache-from): $image"
-        fi
+        # After pulling, also try to load it into buildx builder (optional, --cache-from should work)
+        log "🔄 Image pulled successfully: $image"
+        # Pulled images should be accessible via --cache-from, so we don't need to force load them
     done
     
     log "✅ External images loaded into buildx builder context"
