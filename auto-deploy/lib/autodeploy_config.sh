@@ -7,7 +7,7 @@ AUTODEPLOY_IMAGE_NAME=""
 AUTODEPLOY_PROJECT_NAME=""   # Custom project name
 AUTODEPLOY_COPY_LIST=()
 AUTODEPLOY_RENDER_LIST=()
-AUTODEPLOY_EXTERNAL_IMAGES=()  # External images to load into buildx
+AUTODEPLOY_EXTERNAL_REPOS=()  # External repositories to clone and build before main build
 
 # Read .autodeploy.ini configuration file
 read_autodeploy_ini() {
@@ -74,30 +74,30 @@ read_autodeploy_ini() {
                     AUTODEPLOY_IMAGE_NAME="${line#image_name=}"
                     AUTODEPLOY_IMAGE_NAME="$(trim "$AUTODEPLOY_IMAGE_NAME")"
                     log "🐳 Image name configured: $AUTODEPLOY_IMAGE_NAME"
-                elif [[ "$line" == external_image=* ]]; then
-                    # Single external image (backward compatibility)
-                    local img="${line#external_image=}"
-                    img="$(trim "$img")"
-                    AUTODEPLOY_EXTERNAL_IMAGES+=("$img")
-                    log "📥 External image configured: $img"
-                elif [[ "$line" == external_images=* ]]; then
-                    # Multiple external images (comma-separated)
-                    local images="${line#external_images=}"
-                    images="$(trim "$images")"
+                elif [[ "$line" == external_repo=* ]]; then
+                    # Single external repository (format: user/repo or user/repo:branch)
+                    local repo="${line#external_repo=}"
+                    repo="$(trim "$repo")"
+                    AUTODEPLOY_EXTERNAL_REPOS+=("$repo")
+                    log "📦 External repository configured: $repo"
+                elif [[ "$line" == external_repos=* ]]; then
+                    # Multiple external repositories (comma-separated, format: user/repo or user/repo:branch)
+                    local repos="${line#external_repos=}"
+                    repos="$(trim "$repos")"
                     # Split by comma
-                    IFS=',' read -ra img_array <<< "$images"
-                    for img in "${img_array[@]}"; do
-                        img="$(trim "$img")"
-                        [ -n "$img" ] && AUTODEPLOY_EXTERNAL_IMAGES+=("$img")
-                        log "📥 External image configured: $img"
+                    IFS=',' read -ra repo_array <<< "$repos"
+                    for repo in "${repo_array[@]}"; do
+                        repo="$(trim "$repo")"
+                        [ -n "$repo" ] && AUTODEPLOY_EXTERNAL_REPOS+=("$repo")
+                        log "📦 External repository configured: $repo"
                     done
                 fi
                 ;;
-            external_images)
-                # Section for external images (one per line)
-                local img="$(trim "$line")"
-                [ -n "$img" ] && AUTODEPLOY_EXTERNAL_IMAGES+=("$img")
-                log "📥 External image configured: $img"
+            external_repos)
+                # Section for external repositories (one per line, format: user/repo or user/repo:branch)
+                local repo="$(trim "$line")"
+                [ -n "$repo" ] && AUTODEPLOY_EXTERNAL_REPOS+=("$repo")
+                log "📦 External repository configured: $repo"
                 ;;
             copy)
                 AUTODEPLOY_COPY_LIST+=("$line")
@@ -131,8 +131,8 @@ read_autodeploy_ini() {
         log "📦 Using default image name: $SERVICE"
     fi
     
-    if [ ${#AUTODEPLOY_EXTERNAL_IMAGES[@]} -gt 0 ]; then
-        log "📥 External images to load: ${#AUTODEPLOY_EXTERNAL_IMAGES[@]}"
+    if [ ${#AUTODEPLOY_EXTERNAL_REPOS[@]} -gt 0 ]; then
+        log "📦 External repositories to clone: ${#AUTODEPLOY_EXTERNAL_REPOS[@]}"
     fi
 }
 

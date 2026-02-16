@@ -22,21 +22,23 @@ project_name=my-project-${ENVIRONMENT}
 # Supports environment variable substitution: ${VARIABLE}
 image_name=my-custom-image-${ENVIRONMENT}
 
-# External images to load into buildx before build
-# These images will be pulled and made available during build stages
-# Useful for multi-stage builds that reference external images (COPY --from, FROM, etc.)
-# Single image:
-external_image=node:18-alpine
+# External repositories to clone before main build
+# These repos will be cloned into temp/external-repos/ and available during main build
+# Format: user/repo or user/repo:branch (defaults to main if branch not specified)
+# Single repository:
+external_repo=thiagosol/sdui-core
 
-# OR multiple images (comma-separated):
-external_images=node:18-alpine,nginx:alpine,redis:7-alpine
+# OR with branch:
+# external_repo=thiagosol/sdui-core:dev
 
-[external_images]
-# OR list external images one per line in this section:
-# node:18-alpine
-# nginx:alpine
-# redis:7-alpine
-# postgres:15-alpine
+# OR multiple repositories (comma-separated):
+external_repos=thiagosol/sdui-core,thiagosol/another-repo:feature-branch
+
+[external_repos]
+# OR list external repositories one per line in this section:
+# thiagosol/sdui-core
+# thiagosol/another-repo:dev
+# user/repo:custom-branch
 
 [copy]
 # Extra files/directories to copy from repo to deployment directory

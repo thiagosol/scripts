@@ -117,8 +117,9 @@ main() {
     # Read autodeploy configuration
     read_autodeploy_ini "$TEMP_DIR/.autodeploy.ini"
     
-    # Load external images into buildx (if configured)
-    load_external_images
+    # Clone external repositories (if configured)
+    # This makes external repo files available in temp directory for the main build
+    clone_external_repos "$TEMP_DIR"
     
     # Check if this is a Docker-based deployment
     if [ ! -f "$TEMP_DIR/Dockerfile" ] && [ -z "$(find "$TEMP_DIR" -maxdepth 1 -type f -name 'docker-compose*.yml' -print -quit)" ]; then
